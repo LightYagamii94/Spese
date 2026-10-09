@@ -363,6 +363,16 @@ const stats = { period: 'month' };
 const monthIndex = (ym) => Number(ym.slice(0, 4)) * 12 + Number(ym.slice(5, 7)) - 1;
 const MONTH_NAMES = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
 
+// Macro aree chiuse a tendina nelle statistiche (preferenza di questo browser).
+const STATS_COLLAPSED_KEY = 'spese.ui.statsCollapsed';
+const statsCollapsed = (() => {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(STATS_COLLAPSED_KEY)) || []);
+  } catch {
+    return new Set();
+  }
+})();
+
 function renderStats() {
   const nowYm = $('month').dataset.today;
   if (!$('stats-month').value) $('stats-month').value = nowYm;
@@ -431,10 +441,31 @@ function renderStats() {
       const spent = m.subs.reduce((s, sub) => s + (spentBySub[sub.id] || 0), 0);
       const dot = el('span', { className: 'dot' });
       dot.style.background = AVATAR_COLORS[data.areas.indexOf(m) % AVATAR_COLORS.length];
-      return el('li', { className: 'budget-macro' },
-        budgetRow(m.name, spent, macroBudget(m) * months, dot),
-        el('ul', { className: 'budget-subs' },
-          ...m.subs.map((sub) => el('li', {}, budgetRow(sub.name, spentBySub[sub.id] || 0, sub.budget * months)))));
+      const subs = el('ul', { className: 'budget-subs', hidden: statsCollapsed.has(m.id) },
+        ...m.subs.map((sub) => el('li', {}, budgetRow(sub.name, spentBySub[sub.id] || 0, sub.budget * months))));
+      // Tutta la riga della macro area apre/chiude l'elenco delle sotto aree.
+      const head = el('div', { className: 'budget-head', tabIndex: 0 },
+        el('span', { className: 'chevron', ariaHidden: 'true' }),
+        budgetRow(m.name, spent, macroBudget(m) * months, dot));
+      head.setAttribute('role', 'button');
+      head.setAttribute('aria-expanded', String(!subs.hidden));
+      head.setAttribute('aria-label', `${m.name}: mostra o nascondi le sotto aree`);
+      const toggle = () => {
+        subs.hidden = !subs.hidden;
+        head.setAttribute('aria-expanded', String(!subs.hidden));
+        if (subs.hidden) statsCollapsed.add(m.id); else statsCollapsed.delete(m.id);
+        try {
+          localStorage.setItem(STATS_COLLAPSED_KEY, JSON.stringify([...statsCollapsed]));
+        } catch {}
+      };
+      head.addEventListener('click', toggle);
+      head.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          toggle();
+        }
+      });
+      return el('li', { className: 'budget-macro' }, head, subs);
     });
   if (unassigned > 0) blocks.push(el('li', { className: 'budget-macro' }, budgetRow('Senza area', unassigned, 0)));
   $('budget-list').replaceChildren(...blocks);

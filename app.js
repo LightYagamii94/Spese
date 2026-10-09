@@ -103,6 +103,49 @@ function mergeExpenses(list) {
   save();
 }
 
+function el(tag, props = {}, ...children) {
+  const node = Object.assign(document.createElement(tag), props);
+  node.append(...children);
+  return node;
+}
+
+// Icone SVG disegnate a mano (nessuna libreria esterna).
+const ICONS = {
+  trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2',
+  grip: 'M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01',
+  plus: 'M12 5v14M5 12h14',
+};
+
+function icon(name) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(NS, 'path');
+  path.setAttribute('d', ICONS[name]);
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', 'currentColor');
+  path.setAttribute('stroke-width', name === 'grip' ? '3' : '2');
+  path.setAttribute('stroke-linecap', 'round');
+  path.setAttribute('stroke-linejoin', 'round');
+  svg.append(path);
+  return svg;
+}
+
+function iconButton(name, label, extraClass = '') {
+  const b = el('button', { type: 'button', className: `icon-btn ${extraClass}`.trim(), title: label }, icon(name));
+  b.setAttribute('aria-label', label);
+  return b;
+}
+
+// Campo numerico con il simbolo € a destra.
+function moneyInput(props) {
+  const input = el('input', { type: 'number', step: '0.01', min: '0', inputMode: 'decimal', ...props });
+  return { input, wrap: el('span', { className: 'money' }, input, el('span', { className: 'suffix', textContent: '€' })) };
+}
+
+const MONTHS = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
+
 function render() {
   const month = $('month').value;
   const items = data.expenses
@@ -110,28 +153,21 @@ function render() {
     .sort((a, b) => b.date.localeCompare(a.date));
 
   const rows = items.map((x) => {
-    const tr = document.createElement('tr');
-    for (const [text, cls] of [[x.date.split('-').reverse().join('/')], [x.description], [x.category], [euro.format(x.amount), 'num']]) {
-      const td = document.createElement('td');
-      td.textContent = text;
-      if (cls) td.className = cls;
-      tr.append(td);
-    }
-    const td = document.createElement('td');
-    const del = document.createElement('button');
-    del.type = 'button';
-    del.className = 'link';
-    del.textContent = 'Elimina';
-    del.setAttribute('aria-label', `Elimina ${x.description}`);
+    const [, mo, d] = x.date.split('-');
+    const del = iconButton('trash', `Elimina ${x.description}`, 'danger');
     del.addEventListener('click', () => {
       if (!confirm(`Eliminare "${x.description}"?`)) return;
       data.expenses = data.expenses.filter((y) => y.id !== x.id);
       save();
       render();
     });
-    td.append(del);
-    tr.append(td);
-    return tr;
+    return el('li', {},
+      el('span', { className: 'date-badge' }, el('b', { textContent: d }), el('small', { textContent: MONTHS[Number(mo) - 1] })),
+      el('div', { className: 'expense-main' },
+        el('div', { className: 'desc', textContent: x.description }),
+        el('span', { className: 'chip', textContent: x.category })),
+      el('span', { className: 'expense-amount', textContent: euro.format(x.amount) }),
+      del);
   });
   $('rows').replaceChildren(...rows);
   $('empty').hidden = items.length > 0;
@@ -145,22 +181,18 @@ function render() {
   const bars = Object.entries(byCat)
     .sort((a, b) => b[1] - a[1])
     .map(([cat, sum]) => {
-      const li = document.createElement('li');
-      const name = document.createElement('span');
-      name.textContent = cat;
-      const bar = document.createElement('div');
-      bar.className = 'bar';
+      const bar = el('div', { className: 'bar' });
       bar.style.width = `${(sum / max) * 100}%`;
-      const val = document.createElement('span');
-      val.className = 'num';
-      val.textContent = euro.format(sum);
-      li.append(name, bar, val);
-      return li;
+      return el('li', {},
+        el('span', { className: 'cat', textContent: cat }),
+        el('span', { className: 'num', textContent: euro.format(sum) }),
+        el('div', { className: 'track' }, bar));
     });
   $('by-category').replaceChildren(...bars);
+  $('by-category-card').hidden = bars.length === 0;
 
   const cats = [...new Set(data.expenses.map((x) => x.category))].sort();
-  $('categories').replaceChildren(...cats.map((c) => Object.assign(document.createElement('option'), { value: c })));
+  $('categories').replaceChildren(...cats.map((c) => el('option', { value: c })));
 }
 
 $('expense-form').addEventListener('submit', (e) => {
@@ -193,11 +225,6 @@ const parseBudget = (v) => {
 
 const macroBudget = (m) => m.subs.reduce((s, x) => s + x.budget, 0);
 
-function el(tag, props = {}, ...children) {
-  const node = Object.assign(document.createElement(tag), props);
-  node.append(...children);
-  return node;
-}
 
 // Macro aree chiuse a tendina: è solo una preferenza di visualizzazione,
 // per questo non finisce nei dati né nei backup.
@@ -216,12 +243,62 @@ function saveCollapsed() {
   } catch {}
 }
 
+const AVATAR_COLORS = ['#5b5bf0', '#8b5cf6', '#ec4899', '#f97316', '#10b981', '#0ea5e9', '#eab308', '#ef4444'];
+
+// Trascinamento con il "manico" a sinistra di ogni riga. Usa i pointer events,
+// così funziona sia col mouse sia col dito su telefono e tablet.
+function makeDraggable(handle, li, onDrop) {
+  handle.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const list = li.parentElement;
+    const before = [...list.children].map((c) => c.dataset.id).join();
+    handle.setPointerCapture(e.pointerId);
+    li.classList.add('dragging');
+    document.body.classList.add('is-dragging');
+
+    const mid = (c) => {
+      const r = c.getBoundingClientRect();
+      return r.top + r.height / 2;
+    };
+    // Si spostano le righe vicine e non quella trascinata: staccarla dalla
+    // pagina, anche per un istante, farebbe perdere il puntatore al browser.
+    const move = (ev) => {
+      let prev = li.previousElementSibling;
+      while (prev && ev.clientY < mid(prev)) {
+        li.after(prev);
+        prev = li.previousElementSibling;
+      }
+      let next = li.nextElementSibling;
+      while (next && ev.clientY > mid(next)) {
+        li.before(next);
+        next = li.nextElementSibling;
+      }
+      // Scorre la pagina se si trascina vicino ai bordi dello schermo.
+      if (ev.clientY < 80) window.scrollBy(0, -12);
+      else if (ev.clientY > window.innerHeight - 60) window.scrollBy(0, 12);
+    };
+    const end = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', end);
+      handle.removeEventListener('pointercancel', end);
+      li.classList.remove('dragging');
+      document.body.classList.remove('is-dragging');
+      const ids = [...list.children].map((c) => c.dataset.id);
+      if (ids.join() !== before) onDrop(ids);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+  });
+}
+
 function renderAreas() {
   $('macro-empty').hidden = data.areas.length > 0;
   $('budget-total').textContent = euro.format(data.areas.reduce((s, m) => s + macroBudget(m), 0));
 
-  const cards = data.areas.map((m) => {
-    const name = el('input', { className: 'rename name', value: m.name, maxLength: 40, required: true });
+  const cards = data.areas.map((m, index) => {
+    const name = el('input', { className: 'rename', value: m.name, maxLength: 40, required: true });
     name.setAttribute('aria-label', 'Nome macro area');
     name.addEventListener('change', () => {
       const v = name.value.trim();
@@ -229,7 +306,7 @@ function renderAreas() {
       renderAreas();
     });
 
-    const del = el('button', { type: 'button', className: 'link', textContent: 'Elimina macro area' });
+    const del = iconButton('trash', `Elimina la macro area ${m.name}`, 'danger');
     del.addEventListener('click', () => {
       const extra = m.subs.length ? ` e le sue ${m.subs.length} sotto aree` : '';
       if (!confirm(`Eliminare la macro area "${m.name}"${extra}?`)) return;
@@ -241,18 +318,26 @@ function renderAreas() {
     });
 
     const isOpen = !collapsed.has(m.id);
-    const toggle = el('button', { type: 'button', className: 'toggle' });
+    const toggle = el('button', { type: 'button', className: 'icon-btn toggle' });
     toggle.setAttribute('aria-expanded', String(isOpen));
     toggle.setAttribute('aria-label', `Mostra o nascondi le sotto aree di ${m.name}`);
 
+    const avatar = el('span', { className: 'avatar', textContent: m.name.charAt(0).toUpperCase() });
+    avatar.style.background = AVATAR_COLORS[index % AVATAR_COLORS.length];
+    avatar.setAttribute('aria-hidden', 'true');
+
     const count = m.subs.length === 1 ? '1 sotto area' : `${m.subs.length} sotto aree`;
+    const total = `${euro.format(macroBudget(m))} / mese`;
     const head = el('div', { className: 'macro-head' },
       toggle,
-      name,
-      el('span', { className: 'macro-budget', textContent: `${count} · ${euro.format(macroBudget(m))} / mese` }),
+      avatar,
+      el('div', { className: 'macro-title' }, name, el('div', { className: 'macro-meta', textContent: `${count} · ${total}` })),
+      el('span', { className: 'macro-total', textContent: euro.format(macroBudget(m)) }),
       del);
 
-    const subs = m.subs.map((sub) => {
+    const subs = m.subs.map((sub, i) => {
+      const handle = iconButton('grip', `Trascina per riordinare ${sub.name} (o usa le frecce su e giù)`, 'handle');
+
       const subName = el('input', { className: 'rename', value: sub.name, maxLength: 40, required: true });
       subName.setAttribute('aria-label', 'Nome sotto area');
       subName.addEventListener('change', () => {
@@ -261,16 +346,15 @@ function renderAreas() {
         renderAreas();
       });
 
-      const budget = el('input', { type: 'number', step: '0.01', min: '0', inputMode: 'decimal', value: sub.budget.toFixed(2) });
-      budget.setAttribute('aria-label', `Budget mensile ${sub.name}`);
-      budget.addEventListener('change', () => {
-        sub.budget = parseBudget(budget.value);
+      const budget = moneyInput({ value: sub.budget.toFixed(2) });
+      budget.input.setAttribute('aria-label', `Budget mensile ${sub.name}`);
+      budget.input.addEventListener('change', () => {
+        sub.budget = parseBudget(budget.input.value);
         save();
         renderAreas();
       });
 
-      const subDel = el('button', { type: 'button', className: 'link', textContent: 'Elimina' });
-      subDel.setAttribute('aria-label', `Elimina ${sub.name}`);
+      const subDel = iconButton('trash', `Elimina ${sub.name}`, 'danger');
       subDel.addEventListener('click', () => {
         if (!confirm(`Eliminare la sotto area "${sub.name}"?`)) return;
         m.subs = m.subs.filter((x) => x.id !== sub.id);
@@ -278,19 +362,40 @@ function renderAreas() {
         renderAreas();
       });
 
-      return el('li', {}, subName, el('label', { className: 'budget' }, budget), subDel);
+      const li = el('li', {}, handle, subName, budget.wrap, subDel);
+      li.dataset.id = sub.id;
+
+      makeDraggable(handle, li, (ids) => {
+        m.subs.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+        save();
+        renderAreas();
+      });
+
+      // Alternativa da tastiera: frecce su/giù sul manico.
+      handle.addEventListener('keydown', (e) => {
+        const j = e.key === 'ArrowUp' ? i - 1 : e.key === 'ArrowDown' ? i + 1 : -1;
+        if (j < 0 || j >= m.subs.length) return;
+        e.preventDefault();
+        [m.subs[i], m.subs[j]] = [m.subs[j], m.subs[i]];
+        save();
+        renderAreas();
+        document.querySelector(`li[data-id="${sub.id}"] .handle`)?.focus();
+      });
+
+      return li;
     });
 
     const newName = el('input', { type: 'text', placeholder: 'Nuova sotto area (es. Mutuo)', maxLength: 40, required: true });
     newName.setAttribute('aria-label', 'Nome nuova sotto area');
-    const newBudget = el('input', { type: 'number', step: '0.01', min: '0', inputMode: 'decimal', placeholder: 'Budget €' });
-    newBudget.setAttribute('aria-label', 'Budget mensile nuova sotto area');
-    const form = el('form', { className: 'sub-form' }, newName, newBudget, el('button', { type: 'submit', textContent: 'Aggiungi' }));
+    const newBudget = moneyInput({ placeholder: 'Budget' });
+    newBudget.input.setAttribute('aria-label', 'Budget mensile nuova sotto area');
+    const form = el('form', { className: 'sub-form' }, newName, newBudget.wrap,
+      el('button', { type: 'submit', className: 'btn primary' }, icon('plus'), 'Aggiungi'));
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       const v = newName.value.trim();
       if (!v) return;
-      m.subs.push({ id: crypto.randomUUID(), name: v, budget: parseBudget(newBudget.value || 0) });
+      m.subs.push({ id: crypto.randomUUID(), name: v, budget: parseBudget(newBudget.input.value || 0) });
       save();
       renderAreas();
       // Rimette il cursore nel campo della stessa macro area per inserimenti in serie.
@@ -298,7 +403,7 @@ function renderAreas() {
     });
 
     const body = el('div', { className: 'macro-body', hidden: !isOpen },
-      subs.length ? el('ul', { className: 'sub-list' }, ...subs) : el('p', { className: 'hint', textContent: 'Nessuna sotto area.' }),
+      subs.length ? el('ul', { className: 'sub-list' }, ...subs) : el('p', { className: 'sub-empty', textContent: 'Nessuna sotto area: aggiungine una qui sotto.' }),
       form);
 
     // Apre/chiude senza ridisegnare, così non si perde quanto scritto nei campi.

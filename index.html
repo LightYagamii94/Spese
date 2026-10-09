@@ -2,98 +2,142 @@
 <html lang="it">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <!-- Nessuna connessione verso l'esterno: script, stili e dati restano locali. -->
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
   <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#5b5bf0">
   <title>Le mie spese</title>
-  <link rel="icon" href="data:,">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%235b5bf0'/%3E%3Cpath d='M9 12h14v10a2 2 0 0 1-2 2H11a2 2 0 0 1-2-2z' fill='white'/%3E%3Cpath d='M12 12V10a4 4 0 0 1 8 0v2' stroke='white' stroke-width='2' fill='none'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main>
-    <h1>Le mie spese</h1>
+  <header class="appbar">
+    <div class="appbar-inner">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M3 7a3 3 0 0 1 3-3h11a1 1 0 0 1 1 1v2h1a2 2 0 0 1 2 2v9a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="16.5" cy="13.5" r="1.5" fill="currentColor"/></svg>
+        </span>
+        <div>
+          <h1>Le mie spese</h1>
+          <p class="tagline">I tuoi dati restano solo su questo dispositivo</p>
+        </div>
+      </div>
+      <div class="actions">
+        <button type="button" id="export" class="btn ghost" title="Scarica un file di backup">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Esporta</span>
+        </button>
+        <label class="btn ghost" title="Carica un file di backup">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0L8 8m4-4 4 4M5 19h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Importa</span>
+          <input type="file" id="import" accept=".json,application/json" hidden>
+        </label>
+      </div>
+    </div>
+  </header>
 
+  <main>
     <!-- Recupero, una tantum, dei dati salvati dalla vecchia versione cifrata -->
     <section id="migrate" class="card" hidden>
-      <p>Su questo dispositivo ci sono spese salvate con la versione precedente, protetta da password.
+      <h2>Recupera le spese precedenti</h2>
+      <p class="hint">Su questo dispositivo ci sono spese salvate con la versione precedente, protetta da password.
          Inserisci quella password una sola volta per recuperarle: poi non servirà più.</p>
       <form id="migrate-form">
-        <label>Vecchia password
+        <label class="field">Vecchia password
           <input type="password" id="old-password" autocomplete="current-password" required>
         </label>
-        <button type="submit" id="migrate-submit">Recupera le spese</button>
-        <button type="button" id="migrate-skip" class="secondary">Elimina i vecchi dati</button>
+        <div class="row">
+          <button type="submit" id="migrate-submit" class="btn primary">Recupera le spese</button>
+          <button type="button" id="migrate-skip" class="btn danger-ghost">Elimina i vecchi dati</button>
+        </div>
         <p id="migrate-error" class="error" role="alert"></p>
       </form>
     </section>
 
     <section id="app">
-      <nav class="toolbar">
-        <a href="#spese" class="tab" data-page="spese">Spese</a>
-        <a href="#aree" class="tab" data-page="aree">Aree</a>
-        <span class="spacer"></span>
-        <button type="button" id="export">Esporta backup</button>
-        <label class="button">Importa backup
-          <input type="file" id="import" accept=".json,application/json" hidden>
-        </label>
+      <nav class="tabs" aria-label="Sezioni">
+        <a href="#spese" class="tab" data-page="spese">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          Spese
+        </a>
+        <a href="#aree" class="tab" data-page="aree">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="13" y="4" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="4" y="13" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="13" y="13" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+          Aree e budget
+        </a>
       </nav>
 
+      <!-- ===================== SPESE ===================== -->
       <div id="page-spese" class="page">
-      <div class="toolbar">
-        <label>Mese
-          <input type="month" id="month">
-        </label>
-      </div>
-
-      <form id="expense-form" class="card grid">
-        <label>Data
-          <input type="date" id="date" required>
-        </label>
-        <label>Descrizione
-          <input type="text" id="description" required maxlength="120">
-        </label>
-        <label>Categoria
-          <input type="text" id="category" list="categories" required maxlength="40">
-          <datalist id="categories"></datalist>
-        </label>
-        <label>Importo (€)
-          <input type="number" id="amount" step="0.01" min="0.01" required inputmode="decimal">
-        </label>
-        <button type="submit">Aggiungi</button>
-      </form>
-
-      <div class="card">
-        <h2>Totale del mese: <span id="total">0,00 €</span></h2>
-        <ul id="by-category" class="bars"></ul>
-      </div>
-
-      <div class="card">
-        <table>
-          <thead>
-            <tr><th>Data</th><th>Descrizione</th><th>Categoria</th><th class="num">Importo</th><th></th></tr>
-          </thead>
-          <tbody id="rows"></tbody>
-        </table>
-        <p id="empty" class="hint">Nessuna spesa in questo mese.</p>
-      </div>
-      </div>
-
-      <div id="page-aree" class="page" hidden>
-        <form id="macro-form" class="card inline-form">
-          <label>Nuova macro area
-            <input type="text" id="macro-name" required maxlength="40" placeholder="Es. Casa">
+        <div class="hero">
+          <div>
+            <p class="hero-label">Totale del mese</p>
+            <p class="hero-value" id="total">0,00 €</p>
+          </div>
+          <label class="month-picker">
+            <span class="sr-only">Mese</span>
+            <input type="month" id="month">
           </label>
-          <button type="submit">Aggiungi macro area</button>
-        </form>
-
-        <div class="card summary">
-          <h2>Budget mensile totale: <span id="budget-total">0,00 €</span></h2>
         </div>
 
-        <div id="macro-list"></div>
-        <p id="macro-empty" class="hint">Nessuna macro area. Creane una qui sopra, ad esempio "Casa".</p>
+        <form id="expense-form" class="card form-grid">
+          <h2 class="span-all">Nuova spesa</h2>
+          <label class="field">Data
+            <input type="date" id="date" required>
+          </label>
+          <label class="field">Descrizione
+            <input type="text" id="description" required maxlength="120" placeholder="Es. Spesa al supermercato">
+          </label>
+          <label class="field">Categoria
+            <input type="text" id="category" list="categories" required maxlength="40" placeholder="Es. Alimentari">
+            <datalist id="categories"></datalist>
+          </label>
+          <label class="field">Importo
+            <span class="money">
+              <input type="number" id="amount" step="0.01" min="0.01" required inputmode="decimal" placeholder="0,00">
+              <span class="suffix">€</span>
+            </span>
+          </label>
+          <button type="submit" class="btn primary">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+            Aggiungi
+          </button>
+        </form>
+
+        <div class="card" id="by-category-card">
+          <h2>Per categoria</h2>
+          <ul id="by-category" class="bars"></ul>
+        </div>
+
+        <div class="card">
+          <h2>Movimenti</h2>
+          <ul id="rows" class="expense-list"></ul>
+          <p id="empty" class="empty">Nessuna spesa in questo mese.</p>
+        </div>
+      </div>
+
+      <!-- ===================== AREE ===================== -->
+      <div id="page-aree" class="page" hidden>
+        <div class="hero">
+          <div>
+            <p class="hero-label">Budget mensile totale</p>
+            <p class="hero-value" id="budget-total">0,00 €</p>
+          </div>
+        </div>
+
+        <form id="macro-form" class="card add-macro">
+          <label class="field grow">Nuova macro area
+            <input type="text" id="macro-name" required maxlength="40" placeholder="Es. Casa">
+          </label>
+          <button type="submit" class="btn primary">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+            Aggiungi
+          </button>
+        </form>
+
+        <div id="macro-list" class="macro-list"></div>
+        <p id="macro-empty" class="empty">Nessuna macro area. Creane una qui sopra, ad esempio "Casa".</p>
       </div>
     </section>
   </main>

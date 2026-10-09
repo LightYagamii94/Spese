@@ -15,28 +15,21 @@
   <main>
     <h1>Le mie spese</h1>
 
-    <!-- Schermata di sblocco / creazione password -->
-    <section id="lock-screen" class="card">
-      <p id="lock-intro"></p>
-      <form id="lock-form">
-        <label>Password
-          <input type="password" id="password" autocomplete="current-password" required minlength="8">
+    <!-- Recupero, una tantum, dei dati salvati dalla vecchia versione cifrata -->
+    <section id="migrate" class="card" hidden>
+      <p>Su questo dispositivo ci sono spese salvate con la versione precedente, protetta da password.
+         Inserisci quella password una sola volta per recuperarle: poi non servirà più.</p>
+      <form id="migrate-form">
+        <label>Vecchia password
+          <input type="password" id="old-password" autocomplete="current-password" required>
         </label>
-        <label id="confirm-wrap" hidden>Ripeti password
-          <input type="password" id="password-confirm" autocomplete="new-password" minlength="8">
-        </label>
-        <button type="submit" id="lock-submit">Sblocca</button>
-        <p id="lock-error" class="error" role="alert"></p>
+        <button type="submit" id="migrate-submit">Recupera le spese</button>
+        <button type="button" id="migrate-skip" class="secondary">Elimina i vecchi dati</button>
+        <p id="migrate-error" class="error" role="alert"></p>
       </form>
-      <details>
-        <summary>Ripristina da un backup</summary>
-        <p class="hint">Carica un file di backup cifrato esportato in precedenza. Sostituirà i dati presenti su questo dispositivo.</p>
-        <input type="file" id="import-locked" accept=".json,application/json">
-      </details>
     </section>
 
-    <!-- App vera e propria (visibile solo dopo lo sblocco) -->
-    <section id="app" hidden>
+    <section id="app">
       <div class="toolbar">
         <label>Mese
           <input type="month" id="month">
@@ -46,7 +39,6 @@
         <label class="button">Importa backup
           <input type="file" id="import" accept=".json,application/json" hidden>
         </label>
-        <button type="button" id="lock">Blocca</button>
       </div>
 
       <form id="expense-form" class="card grid">

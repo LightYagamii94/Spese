@@ -1,137 +1,106 @@
 'use strict';
 
-// I dati vengono cifrati nel browser con AES-GCM usando una chiave derivata
-// dalla password (PBKDF2-SHA256). Su disco (localStorage) e nei backup finisce
-// solo il testo cifrato: senza la password nessuno può leggerlo.
+// Le spese restano solo nel browser di questo dispositivo (localStorage):
+// non vengono mai inviate a nessun server.
 
-const STORAGE_KEY = 'spese.vault.v1';
-const PBKDF2_ITERATIONS = 600000;
+const STORAGE_KEY = 'spese.data.v2';
+const LEGACY_VAULT_KEY = 'spese.vault.v1'; // vecchia versione cifrata con password
 
 const $ = (id) => document.getElementById(id);
-const enc = new TextEncoder();
-const dec = new TextDecoder();
 
-let key = null;   // CryptoKey non estraibile, vive solo in memoria
-let salt = null;
-let data = { expenses: [] };
+let data = load();
 
 const euro = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
 
-// ---------- Crittografia ----------
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (parsed && Array.isArray(parsed.expenses)) return parsed;
+  } catch {}
+  return { expenses: [] };
+}
 
-const toB64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+function save() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+// ---------- Vecchi dati cifrati (versione con password) ----------
+
 const fromB64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
-async function deriveKey(password, saltBytes) {
-  const material = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
-  return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: saltBytes, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
-    material,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt']
-  );
-}
-
-async function encryptVault() {
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(JSON.stringify(data)));
-  return { v: 1, kdf: 'PBKDF2-SHA256', iter: PBKDF2_ITERATIONS, salt: toB64(salt), iv: toB64(iv), ct: toB64(ct) };
-}
-
-async function decryptVault(vault, password) {
-  const s = fromB64(vault.salt);
-  const k = await deriveKey(password, s);
-  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64(vault.iv) }, k, fromB64(vault.ct));
-  return { key: k, salt: s, data: JSON.parse(dec.decode(plain)) };
-}
-
-function readVault() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  return raw ? JSON.parse(raw) : null;
-}
-
-async function save() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(await encryptVault()));
-}
-
-function isValidVault(v) {
+function isLegacyVault(v) {
   return v && v.v === 1 && typeof v.salt === 'string' && typeof v.iv === 'string' && typeof v.ct === 'string';
 }
 
-// ---------- Blocco / sblocco ----------
-
-function showLockScreen() {
-  const exists = !!readVault();
-  $('lock-intro').textContent = exists
-    ? 'Inserisci la password per sbloccare le tue spese.'
-    : 'Prima configurazione: scegli una password (almeno 8 caratteri). Non è recuperabile: se la perdi, i dati non si possono più leggere.';
-  $('confirm-wrap').hidden = exists;
-  $('password-confirm').required = !exists;
-  $('password').autocomplete = exists ? 'current-password' : 'new-password';
-  $('lock-submit').textContent = exists ? 'Sblocca' : 'Crea archivio cifrato';
-  $('lock-error').textContent = '';
-  $('password').value = '';
-  $('password-confirm').value = '';
-  $('lock-screen').hidden = false;
-  $('app').hidden = true;
-  $('password').focus();
+async function decryptLegacy(vault, password) {
+  const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+  const key = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: fromB64(vault.salt), iterations: vault.iter || 600000, hash: 'SHA-256' },
+    material,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['decrypt']
+  );
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64(vault.iv) }, key, fromB64(vault.ct));
+  return JSON.parse(new TextDecoder().decode(plain));
 }
 
-function lock() {
-  key = null;
-  salt = null;
-  data = { expenses: [] };
-  $('rows').replaceChildren();
-  showLockScreen();
-}
-
-$('lock-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const password = $('password').value;
-  const vault = readVault();
-  $('lock-submit').disabled = true;
-  $('lock-error').textContent = '';
+function readLegacyVault() {
   try {
-    if (vault) {
-      const res = await decryptVault(vault, password);
-      key = res.key; salt = res.salt; data = res.data;
-    } else {
-      if (password !== $('password-confirm').value) {
-        $('lock-error').textContent = 'Le password non coincidono.';
-        return;
-      }
-      salt = crypto.getRandomValues(new Uint8Array(16));
-      key = await deriveKey(password, salt);
-      data = { expenses: [] };
-      await save();
-    }
-    $('password').value = '';
-    $('password-confirm').value = '';
-    $('lock-screen').hidden = true;
-    $('app').hidden = false;
-    render();
+    const v = JSON.parse(localStorage.getItem(LEGACY_VAULT_KEY));
+    return isLegacyVault(v) ? v : null;
   } catch {
-    $('lock-error').textContent = 'Password errata.';
+    return null;
+  }
+}
+
+function finishMigration() {
+  localStorage.removeItem(LEGACY_VAULT_KEY);
+  $('migrate').hidden = true;
+  $('app').hidden = false;
+  render();
+}
+
+$('migrate-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('migrate-submit').disabled = true;
+  $('migrate-error').textContent = '';
+  try {
+    const old = await decryptLegacy(readLegacyVault(), $('old-password').value);
+    mergeExpenses(old.expenses || []);
+    finishMigration();
+  } catch {
+    $('migrate-error').textContent = 'Password errata.';
   } finally {
-    $('lock-submit').disabled = false;
+    $('migrate-submit').disabled = false;
   }
 });
 
-$('lock').addEventListener('click', lock);
-
-// Blocco automatico dopo 5 minuti di inattività.
-let idleTimer;
-function resetIdle() {
-  clearTimeout(idleTimer);
-  if (key) idleTimer = setTimeout(lock, 5 * 60 * 1000);
-}
-['click', 'keydown', 'touchstart'].forEach((ev) => document.addEventListener(ev, resetIdle, { passive: true }));
+$('migrate-skip').addEventListener('click', () => {
+  if (confirm('Le spese salvate con la vecchia versione verranno eliminate definitivamente. Continuare?')) finishMigration();
+});
 
 // ---------- Spese ----------
 
+function mergeExpenses(list) {
+  const ids = new Set(data.expenses.map((x) => x.id));
+  for (const x of list) {
+    if (x && x.id && !ids.has(x.id) && typeof x.date === 'string' && typeof x.amount === 'number') {
+      data.expenses.push({
+        id: String(x.id),
+        date: x.date,
+        description: String(x.description ?? ''),
+        category: String(x.category ?? ''),
+        amount: x.amount,
+      });
+      ids.add(x.id);
+    }
+  }
+  save();
+}
+
 function render() {
-  resetIdle();
   const month = $('month').value;
   const items = data.expenses
     .filter((x) => x.date.startsWith(month))
@@ -151,10 +120,10 @@ function render() {
     del.className = 'link';
     del.textContent = 'Elimina';
     del.setAttribute('aria-label', `Elimina ${x.description}`);
-    del.addEventListener('click', async () => {
+    del.addEventListener('click', () => {
       if (!confirm(`Eliminare "${x.description}"?`)) return;
       data.expenses = data.expenses.filter((y) => y.id !== x.id);
-      await save();
+      save();
       render();
     });
     td.append(del);
@@ -191,7 +160,7 @@ function render() {
   $('categories').replaceChildren(...cats.map((c) => Object.assign(document.createElement('option'), { value: c })));
 }
 
-$('expense-form').addEventListener('submit', async (e) => {
+$('expense-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const amount = Math.round(parseFloat($('amount').value) * 100) / 100;
   if (!(amount > 0)) return;
@@ -202,7 +171,7 @@ $('expense-form').addEventListener('submit', async (e) => {
     category: $('category').value.trim(),
     amount,
   });
-  await save();
+  save();
   $('month').value = $('date').value.slice(0, 7);
   $('description').value = '';
   $('amount').value = '';
@@ -214,8 +183,8 @@ $('month').addEventListener('change', render);
 
 // ---------- Backup ----------
 
-$('export').addEventListener('click', async () => {
-  const blob = new Blob([JSON.stringify(await encryptVault())], { type: 'application/json' });
+$('export').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `spese-backup-${new Date().toISOString().slice(0, 10)}.json`;
@@ -223,25 +192,38 @@ $('export').addEventListener('click', async () => {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 });
 
-async function importFile(file) {
-  let vault;
+$('import').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  let parsed;
   try {
-    vault = JSON.parse(await file.text());
+    parsed = JSON.parse(await file.text());
   } catch {
-    vault = null;
+    parsed = null;
   }
-  if (!isValidVault(vault)) {
+  let list;
+  if (parsed && Array.isArray(parsed.expenses)) {
+    list = parsed.expenses;
+  } else if (isLegacyVault(parsed)) {
+    // Backup creato con la vecchia versione protetta da password.
+    const password = prompt('Questo backup è protetto da password. Inseriscila per importarlo:');
+    if (password === null) return;
+    try {
+      list = (await decryptLegacy(parsed, password)).expenses || [];
+    } catch {
+      alert('Password errata.');
+      return;
+    }
+  } else {
     alert('Il file non è un backup valido.');
     return;
   }
-  if (readVault() && !confirm('Il backup sostituirà i dati presenti su questo dispositivo. Continuare?')) return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(vault));
-  alert('Backup importato. Sblocca con la password con cui era stato creato.');
-  lock();
-}
-
-$('import').addEventListener('change', (e) => { if (e.target.files[0]) importFile(e.target.files[0]); e.target.value = ''; });
-$('import-locked').addEventListener('change', (e) => { if (e.target.files[0]) importFile(e.target.files[0]); e.target.value = ''; });
+  const before = data.expenses.length;
+  mergeExpenses(list);
+  render();
+  alert(`Importate ${data.expenses.length - before} spese.`);
+});
 
 // ---------- Avvio ----------
 
@@ -249,4 +231,10 @@ const today = new Date();
 const iso = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString();
 $('date').value = iso.slice(0, 10);
 $('month').value = iso.slice(0, 7);
-showLockScreen();
+
+if (readLegacyVault()) {
+  $('app').hidden = true;
+  $('migrate').hidden = false;
+} else {
+  render();
+}

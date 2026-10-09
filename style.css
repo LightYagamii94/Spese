@@ -74,6 +74,12 @@ button, .button {
   display: inline-block;
 }
 
+button.secondary {
+  background: none;
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
 button.link {
   background: none;
   border: none;
@@ -81,7 +87,7 @@ button.link {
   padding: 4px 8px;
 }
 
-#lock-form { display: flex; flex-direction: column; gap: 12px; max-width: 360px; }
+#migrate-form { display: flex; flex-direction: column; gap: 12px; max-width: 360px; }
 
 .grid {
   display: grid;
@@ -110,8 +116,6 @@ th { font-size: 0.85rem; color: var(--muted); font-weight: 600; }
 
 .error { color: var(--danger); min-height: 1.5em; margin: 0; }
 .hint { color: var(--muted); font-size: 0.9rem; }
-
-details { margin-top: 16px; }
 
 @media (max-width: 600px) {
   th:nth-child(3), td:nth-child(3) { display: none; }

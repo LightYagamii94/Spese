@@ -1331,6 +1331,11 @@ applyPartnerName();
 updateSplitUI();
 updateDebtBadge();
 
+// Service worker: permette di installare l'app e di aprirla anche offline.
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
 if (readLegacyVault()) {
   $('app').hidden = true;
   $('migrate').hidden = false;

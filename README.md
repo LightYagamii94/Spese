@@ -19,6 +19,15 @@ Web app per registrare le spese personali. I dati restano solo sul tuo dispositi
 
 Le pagine si cambiano dalla barra in basso, pensata per l'uso da telefono; tenendo premuto un pulsante della barra lo si può trascinare per cambiarne l'ordine. Le frecce accanto al mese permettono di passare velocemente al mese precedente o successivo.
 
+## Installazione sul telefono
+
+L'app è una PWA: si installa dal browser e poi si apre dalla schermata Home a tutto schermo, anche senza connessione.
+
+- **Android (Chrome):** menu ⋮ → **Installa app** (o "Aggiungi a schermata Home" → Installa).
+- **iPhone (Safari):** pulsante Condividi → **Aggiungi alla schermata Home**.
+
+Il service worker (`sw.js`) salva in cache solo i file dell'app, mai i dati; con connessione scarica sempre la versione più recente.
+
 ## Backup e più dispositivi
 
 I dati vivono in un solo browser. Usa **Esporta backup** per scaricare un file da conservare o da importare su un altro dispositivo con **Importa backup** (le spese già presenti vengono mantenute, quelle nuove aggiunte).

@@ -214,11 +214,23 @@ function budgetRow(label, spent, budget, extra) {
   const state = budget <= 0 ? 'none' : ratio > 1 ? 'over' : ratio >= 0.8 ? 'warn' : '';
   const bar = el('div', { className: 'bar' });
   bar.style.width = `${Math.min(ratio, 1) * 100}%`;
-  const value = el('span', { className: 'value' }, el('b', { textContent: euro.format(spent) }),
-    budget > 0 ? ` di ${euro.format(budget)}` : ' · nessun budget');
+  const left = budget <= 0 ? 'nessun budget'
+    : spent <= budget ? `restano ${euro.format(budget - spent)}` : `sforato di ${euro.format(spent - budget)}`;
+  const detail = budget > 0 ? `Speso ${euro.format(spent)} di ${euro.format(budget)}` : `Speso ${euro.format(spent)}`;
   const labelEl = el('span', { className: 'label' }, ...(extra ? [extra] : []), label);
   labelEl.title = label;
-  return el('div', { className: `budget-row ${state}`.trim() }, labelEl, value, el('div', { className: 'track' }, bar));
+  return el('div', { className: `budget-row ${state}`.trim() },
+    labelEl,
+    el('span', { className: 'left', textContent: left }),
+    el('div', { className: 'track' }, bar),
+    el('span', { className: 'detail', textContent: detail }));
+}
+
+// Nome da mostrare per una spesa: la descrizione, oppure (se vuota) la sotto area.
+function expenseTitle(x) {
+  if (x.description) return x.description;
+  const found = x.subId ? findSub(x.subId) : null;
+  return found ? found.sub.name : x.category || 'Spesa';
 }
 
 function render() {
@@ -238,10 +250,11 @@ function render() {
     else tags.push(el('span', { className: 'chip muted', textContent: x.subId ? 'Area eliminata' : 'Senza area' }));
     if (account) tags.push(el('span', { className: 'chip', textContent: `${account.emoji} ${account.name}` }));
 
-    const del = iconButton('trash', `Elimina ${x.description}`, 'danger');
+    const title = expenseTitle(x);
+    const del = iconButton('trash', `Elimina ${title}`, 'danger');
     del.addEventListener('click', () => {
       const back = account ? `\n${euro.format(x.amount)} torneranno sul conto "${account.name}".` : '';
-      if (!confirm(`Eliminare "${x.description}"?${back}`)) return;
+      if (!confirm(`Eliminare "${title}"?${back}`)) return;
       data.expenses = data.expenses.filter((y) => y.id !== x.id);
       save();
       render();
@@ -249,7 +262,7 @@ function render() {
     return el('li', {},
       el('span', { className: 'date-badge' }, el('b', { textContent: d }), el('small', { textContent: MONTHS[Number(mo) - 1] })),
       el('div', { className: 'expense-main' },
-        el('div', { className: 'desc', textContent: x.description }),
+        el('div', { className: 'desc', textContent: title }),
         el('div', { className: 'tags' }, ...tags)),
       el('span', { className: 'expense-amount', textContent: euro.format(x.amount) }),
       del);
@@ -260,17 +273,77 @@ function render() {
   const total = items.reduce((s, x) => s + x.amount, 0);
   $('total').textContent = euro.format(total);
 
-  // Budget del mese: speso per sotto area e per macro area.
-  const spentBySub = {};
-  let unassigned = 0;
-  for (const x of items) {
-    if (x.subId && findSub(x.subId)) spentBySub[x.subId] = (spentBySub[x.subId] || 0) + x.amount;
-    else unassigned += x.amount;
-  }
   const totalBudget = data.areas.reduce((s, m) => s + macroBudget(m), 0);
   $('budget-hint').textContent = totalBudget > 0
     ? `su ${euro.format(totalBudget)} di budget · ${total <= totalBudget ? `restano ${euro.format(totalBudget - total)}` : `sforato di ${euro.format(total - totalBudget)}`}`
     : '';
+}
+
+// ---------- Statistiche ----------
+
+const stats = { period: 'month' };
+const monthIndex = (ym) => Number(ym.slice(0, 4)) * 12 + Number(ym.slice(5, 7)) - 1;
+const MONTH_NAMES = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
+
+function renderStats() {
+  const nowYm = $('month').dataset.today;
+  if (!$('stats-month').value) $('stats-month').value = nowYm;
+
+  // Anni disponibili: dal primo anno con spese a quello corrente.
+  const firstYm = data.expenses.reduce((m, x) => (x.date.slice(0, 7) < m ? x.date.slice(0, 7) : m), nowYm);
+  const lastYm = data.expenses.reduce((m, x) => (x.date.slice(0, 7) > m ? x.date.slice(0, 7) : m), nowYm);
+  const years = [];
+  for (let y = Number(lastYm.slice(0, 4)); y >= Number(firstYm.slice(0, 4)); y--) years.push(String(y));
+  const yearSel = $('stats-year');
+  const prevYear = yearSel.value || nowYm.slice(0, 4);
+  yearSel.replaceChildren(...years.map((y) => el('option', { value: y, textContent: y })));
+  yearSel.value = years.includes(prevYear) ? prevYear : years[0];
+
+  for (const b of document.querySelectorAll('.segmented button')) b.setAttribute('aria-pressed', String(b.dataset.period === stats.period));
+  $('stats-month').parentElement.hidden = stats.period !== 'month';
+  yearSel.parentElement.hidden = stats.period !== 'year';
+
+  // Spese del periodo e quante volte va contato il budget mensile.
+  let inPeriod;
+  let months;
+  let label;
+  let note;
+  if (stats.period === 'month') {
+    const ym = $('stats-month').value || nowYm;
+    inPeriod = (x) => x.date.startsWith(ym);
+    months = 1;
+    label = `Rimanente a ${MONTH_NAMES[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`;
+    note = 'Budget mensile delle aree confrontato con le spese del mese scelto.';
+  } else if (stats.period === 'year') {
+    const y = yearSel.value;
+    inPeriod = (x) => x.date.startsWith(`${y}-`);
+    months = 12;
+    label = `Rimanente nel ${y}`;
+    note = 'Budget annuale = budget mensile × 12 mesi.';
+  } else {
+    inPeriod = () => true;
+    months = monthIndex(lastYm) - monthIndex(firstYm) + 1;
+    label = 'Rimanente totale';
+    const from = `${MONTH_NAMES[Number(firstYm.slice(5, 7)) - 1]} ${firstYm.slice(0, 4)}`;
+    note = `Budget totale = budget mensile × ${months} ${months === 1 ? 'mese' : 'mesi'} (da ${from}, mese della prima spesa, a oggi).`;
+  }
+
+  const spentBySub = {};
+  let unassigned = 0;
+  let spentTotal = 0;
+  for (const x of data.expenses) {
+    if (!inPeriod(x)) continue;
+    spentTotal += x.amount;
+    if (x.subId && findSub(x.subId)) spentBySub[x.subId] = (spentBySub[x.subId] || 0) + x.amount;
+    else unassigned += x.amount;
+  }
+  const budgetTotal = data.areas.reduce((s, m) => s + macroBudget(m), 0) * months;
+  const remaining = budgetTotal - spentTotal;
+
+  $('stats-label').textContent = label;
+  $('stats-remaining').textContent = euro.format(remaining);
+  $('stats-sub').textContent = `Speso ${euro.format(spentTotal)} su ${euro.format(budgetTotal)} di budget`;
+  $('stats-note').textContent = note;
 
   const blocks = data.areas
     .filter((m) => m.subs.length)
@@ -279,20 +352,30 @@ function render() {
       const dot = el('span', { className: 'dot' });
       dot.style.background = AVATAR_COLORS[data.areas.indexOf(m) % AVATAR_COLORS.length];
       return el('li', { className: 'budget-macro' },
-        budgetRow(m.name, spent, macroBudget(m), dot),
+        budgetRow(m.name, spent, macroBudget(m) * months, dot),
         el('ul', { className: 'budget-subs' },
-          ...m.subs.map((sub) => el('li', {}, budgetRow(sub.name, spentBySub[sub.id] || 0, sub.budget)))));
+          ...m.subs.map((sub) => el('li', {}, budgetRow(sub.name, spentBySub[sub.id] || 0, sub.budget * months)))));
     });
   if (unassigned > 0) blocks.push(el('li', { className: 'budget-macro' }, budgetRow('Senza area', unassigned, 0)));
   $('budget-list').replaceChildren(...blocks);
-  $('budget-card').hidden = blocks.length === 0;
+  $('stats-empty').hidden = blocks.length > 0;
 }
+
+for (const b of document.querySelectorAll('.segmented button')) {
+  b.addEventListener('click', () => {
+    stats.period = b.dataset.period;
+    renderStats();
+  });
+}
+$('stats-month').addEventListener('change', renderStats);
+$('stats-year').addEventListener('change', renderStats);
 
 $('expense-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const amount = Math.round(parseFloat($('amount').value) * 100) / 100;
   const subId = $('expense-area').value;
   if (!(amount > 0) || !findSub(subId)) return;
+  // La descrizione è facoltativa: se vuota, nell'elenco si vede il nome della sotto area.
   const accountId = $('expense-account').value;
   data.expenses.push({
     id: crypto.randomUUID(),
@@ -732,7 +815,7 @@ function mergeAccounts(list) {
 
 // ---------- Navigazione ----------
 
-const PAGES = { spese: render, aree: renderAreas, conti: renderAccounts };
+const PAGES = { spese: render, statistiche: renderStats, aree: renderAreas, conti: renderAccounts };
 
 function showPage() {
   const requested = location.hash.slice(1);
@@ -800,6 +883,7 @@ const today = new Date();
 const iso = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString();
 $('date').value = iso.slice(0, 10);
 $('month').value = iso.slice(0, 7);
+$('month').dataset.today = iso.slice(0, 7);
 
 if (readLegacyVault()) {
   $('app').hidden = true;

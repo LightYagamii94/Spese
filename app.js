@@ -23,10 +23,12 @@ function load() {
       if (!Array.isArray(parsed.transfers)) parsed.transfers = [];
       if (typeof parsed.partner !== 'string' || !parsed.partner) parsed.partner = 'Laura';
       if (!parsed.goal || !(parsed.goal.target > 0)) parsed.goal = { target: 10000 };
+      if (!Array.isArray(parsed.goals)) parsed.goals = [];
+      if (!Array.isArray(parsed.goalsDone)) parsed.goalsDone = [];
       return parsed;
     }
   } catch {}
-  return { expenses: [], incomes: [], transfers: [], areas: [], accounts: [], partner: 'Laura', goal: { target: 10000 } };
+  return { expenses: [], incomes: [], transfers: [], areas: [], accounts: [], partner: 'Laura', goal: { target: 10000 }, goals: [], goalsDone: [] };
 }
 
 function save() {
@@ -1620,7 +1622,156 @@ function renderGoals() {
   }
   $('forecast-main').replaceChildren(...main);
   $('forecast-note').textContent = note;
+  renderOtherGoals(b, sav);
 }
+
+// ---------- Altri obiettivi ----------
+// Vengono riempiti in ordine (priorità = posizione nell'elenco) con l'avanzo,
+// cioè la parte del cassetto che supera il suo obiettivo.
+
+const ymLabel = (ym) => `${MONTH_NAMES[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`;
+
+function renderOtherGoals(b, sav) {
+  const cassettoTarget = data.goal.target;
+  const surplus = round2(Math.max(0, b.stash - cassettoTarget));
+  let available = surplus;
+  // Quanto manca, in totale, prima che ogni obiettivo sia pieno (cassetto compreso).
+  let missingBefore = Math.max(0, cassettoTarget - b.stash);
+  $('surplus-hint').textContent = b.stash >= cassettoTarget
+    ? `Avanzo del cassetto: ${euro.format(surplus)}`
+    : `Partono quando il cassetto supera ${euro.format(cassettoTarget)}`;
+
+  const items = data.goals.map((g, index) => {
+    const funded = round2(Math.min(g.target, available));
+    available = round2(available - funded);
+    missingBefore += g.target - funded;
+    const reached = funded >= g.target;
+
+    const emoji = el('button', { type: 'button', className: 'emoji-btn', textContent: g.emoji });
+    emoji.setAttribute('aria-label', `Cambia emoji di ${g.name}`);
+    emoji.addEventListener('click', () => openEmojiPicker(g.emoji, (e) => { g.emoji = e; save(); renderGoals(); }));
+
+    const name = el('input', { className: 'rename', value: g.name, maxLength: 40, required: true });
+    name.setAttribute('aria-label', 'Nome obiettivo');
+    name.addEventListener('change', () => {
+      const v = name.value.trim();
+      if (v) { g.name = v; save(); }
+      renderGoals();
+    });
+
+    const del = iconButton('trash', `Elimina l'obiettivo ${g.name}`, 'danger');
+    del.addEventListener('click', () => {
+      if (!confirm(`Eliminare l'obiettivo "${g.name}"?`)) return;
+      data.goals = data.goals.filter((x) => x.id !== g.id);
+      save();
+      renderGoals();
+    });
+
+    const handle = iconButton('grip', `Trascina per cambiare la priorità di ${g.name} (o usa le frecce)`, 'handle');
+    const fill = el('div', { className: 'goal-fill' });
+    fill.style.width = `${(funded / g.target) * 100}%`;
+
+    const target = el('input', { type: 'number', step: '0.01', min: '1', inputMode: 'decimal', value: g.target.toFixed(2) });
+    target.addEventListener('change', () => {
+      const v = round2(parseFloat(target.value));
+      if (v > 0) { g.target = v; save(); }
+      renderGoals();
+    });
+    const deadline = el('input', { type: 'month', value: g.deadline || '' });
+    deadline.addEventListener('change', () => {
+      if (deadline.value) g.deadline = deadline.value;
+      else delete g.deadline;
+      save();
+      renderGoals();
+    });
+
+    // Stato: raggiunto, previsione e confronto con la scadenza.
+    const status = [];
+    let doneBtn = null;
+    if (reached) {
+      status.push(el('span', { className: 'ok', textContent: '🎉 Raggiunto!' }), ' Quando lo usi, premi Completato: smetterà di prendere soldi dall\'avanzo.');
+      doneBtn = el('button', { type: 'button', className: 'btn primary done', textContent: 'Completato' });
+      doneBtn.addEventListener('click', () => {
+        if (!confirm(`Segnare "${g.name}" come completato?\nPasserà tra i completati e i suoi ${euro.format(g.target)} torneranno disponibili per gli obiettivi successivi.`)) return;
+        data.goals = data.goals.filter((x) => x.id !== g.id);
+        data.goalsDone.unshift({ ...g, completed: todayIso() });
+        save();
+        renderGoals();
+      });
+    } else if (!sav || sav.avg <= 0) {
+      status.push(sav ? 'Al ritmo attuale non si avvicina: le spese superano le entrate.' : 'Registra entrate e spese per avere una previsione.');
+    } else {
+      const months = Math.ceil(missingBefore / sav.avg);
+      const when = shiftMonth(b.nowYm, months);
+      status.push('Circa a ', el('b', { textContent: ymLabel(when) }));
+      if (g.deadline) {
+        const left = Math.max(1, monthIndex(g.deadline) - monthIndex(b.nowYm));
+        if (when <= g.deadline) status.push(' · ', el('span', { className: 'ok', textContent: `in tempo per ${ymLabel(g.deadline)}` }));
+        else status.push(' · ', el('span', { className: 'warn', textContent: `per ${ymLabel(g.deadline)} servono ${euro.format(Math.ceil(missingBefore / left))} al mese` }), ` (ora ${euro.format(sav.avg)})`);
+      }
+    }
+
+    const li = el('li', { className: `goal-item${reached ? ' reached' : ''}` },
+      el('div', { className: 'goal-head' }, handle, emoji, name, el('span', { className: 'goal-rank', textContent: `${index + 1}°` }), del),
+      el('div', { className: 'goal-track' }, fill),
+      el('div', { className: 'goal-meta' },
+        el('div', { className: 'goal-amounts' }, el('span', {}, el('b', { textContent: euro.format(funded) }), ` di ${euro.format(g.target)}`), el('span', { textContent: `${Math.floor((funded / g.target) * 100)}%` })),
+        el('label', { className: 'field' }, 'Importo', el('span', { className: 'money' }, target, el('span', { className: 'suffix', textContent: '€' }))),
+        el('label', { className: 'field' }, 'Entro (facoltativo)', deadline)),
+      el('p', { className: 'goal-status' }, ...status),
+      ...(doneBtn ? [doneBtn] : []));
+    makeSortable(handle, li, () => data.goals, g.id, renderGoals);
+    return li;
+  });
+  $('goal-list').replaceChildren(...items);
+  $('goal-empty').hidden = data.goals.length > 0;
+
+  const done = data.goalsDone.map((g) => {
+    const [y, m, d] = (g.completed || '').split('-');
+    const restore = el('button', { type: 'button', className: 'btn ghost', textContent: 'Ripristina' });
+    restore.addEventListener('click', () => {
+      data.goalsDone = data.goalsDone.filter((x) => x.id !== g.id);
+      const { completed, ...rest } = g;
+      data.goals.push(rest);
+      save();
+      renderGoals();
+    });
+    const del = iconButton('trash', `Elimina ${g.name}`, 'danger');
+    del.addEventListener('click', () => {
+      if (!confirm(`Eliminare "${g.name}" dai completati?`)) return;
+      data.goalsDone = data.goalsDone.filter((x) => x.id !== g.id);
+      save();
+      renderGoals();
+    });
+    return el('li', {}, el('span', { className: 'emoji', textContent: g.emoji }),
+      el('div', { className: 'expense-main' }, el('div', { className: 'desc', textContent: g.name }),
+        el('div', { className: 'tags' }, el('span', { className: 'chip ok', textContent: `${euro.format(g.target)}${d ? ` · ${d}/${m}/${y}` : ''}` }))),
+      restore, del);
+  });
+  $('goals-done').replaceChildren(...done);
+  $('goals-done-count').textContent = String(done.length);
+  $('goals-done-card').hidden = done.length === 0;
+}
+
+let newGoalEmoji = '🎯';
+$('goal-emoji').addEventListener('click', () => {
+  openEmojiPicker(newGoalEmoji, (e) => { newGoalEmoji = e; $('goal-emoji').textContent = e; });
+});
+
+$('goal-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const name = $('goal-name').value.trim();
+  const target = round2(parseFloat($('goal-amount').value));
+  if (!name || !(target > 0)) return;
+  data.goals.push({ id: crypto.randomUUID(), name, emoji: newGoalEmoji, target, ...($('goal-deadline').value ? { deadline: $('goal-deadline').value } : {}) });
+  save();
+  $('goal-name').value = '';
+  $('goal-amount').value = '';
+  $('goal-deadline').value = '';
+  newGoalEmoji = '🎯';
+  $('goal-emoji').textContent = newGoalEmoji;
+  renderGoals();
+});
 
 $('goal-target').addEventListener('change', () => {
   const v = round2(parseFloat($('goal-target').value));
@@ -1803,6 +1954,16 @@ $('import').addEventListener('change', async (e) => {
     && ({ id: String(x.id), date: x.date, description: String(x.description ?? ''), fromId: x.fromId, toId: x.toId, amount: x.amount, ...(typeof x.at === 'number' ? { at: x.at } : {}) }));
   if (typeof parsed?.partner === 'string' && parsed.partner) data.partner = parsed.partner;
   if (parsed?.goal?.target > 0) data.goal = { target: Number(parsed.goal.target) };
+  const cleanGoal = (g) => (g && g.id && typeof g.name === 'string' && g.target > 0
+    ? { id: String(g.id), name: g.name, emoji: firstGrapheme(String(g.emoji ?? '')) || '🎯', target: Number(g.target),
+      ...(typeof g.deadline === 'string' && /^\d{4}-\d{2}$/.test(g.deadline) ? { deadline: g.deadline } : {}),
+      ...(typeof g.completed === 'string' ? { completed: g.completed } : {}) }
+    : null);
+  for (const key of ['goals', 'goalsDone']) {
+    if (!Array.isArray(parsed?.[key])) continue;
+    const known = new Set([...data.goals, ...data.goalsDone].map((g) => g.id));
+    for (const g of parsed[key].map(cleanGoal)) if (g && !known.has(g.id)) data[key].push(g);
+  }
   save();
   showPage();
   alert(`Importati ${data.expenses.length + data.incomes.length + data.transfers.length - before} movimenti.`);
@@ -1821,7 +1982,7 @@ updateDebtBadge();
 
 // ---------- Versione e aggiornamenti ----------
 // Da aumentare insieme a version.json e ai ?v= di index.html a ogni modifica.
-const APP_VERSION = 21;
+const APP_VERSION = 22;
 $('app-version').textContent = `Versione ${APP_VERSION}`;
 
 // L'app installata può restare aperta in memoria per giorni: quando torna in

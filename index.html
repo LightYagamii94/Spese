@@ -22,7 +22,7 @@
   <meta name="color-scheme" content="light dark">
   <!-- Il numero di versione (?v=) va aumentato a ogni modifica di style.css o app.js:
        costringe il browser a scaricare i file nuovi invece di usare quelli in cache. -->
-  <link rel="stylesheet" href="style.css?v=21">
+  <link rel="stylesheet" href="style.css?v=22">
 </head>
 <body>
   <header class="appbar">
@@ -304,6 +304,40 @@
           <p class="hint" id="forecast-note"></p>
         </div>
 
+        <!-- Altri obiettivi, finanziati in ordine con l'avanzo del cassetto -->
+        <div class="section-head">
+          <h2>Altri obiettivi</h2>
+          <span class="hint" id="surplus-hint"></span>
+        </div>
+        <ul id="goal-list" class="goal-list"></ul>
+        <p id="goal-empty" class="empty">Nessun obiettivo. Aggiungine uno qui sotto: verrà finanziato con i soldi che superano il cassetto.</p>
+
+        <form id="goal-form" class="card add-goal">
+          <h2 class="span-all">Nuovo obiettivo</h2>
+          <button type="button" id="goal-emoji" class="emoji-btn" aria-label="Scegli emoji del nuovo obiettivo">🎯</button>
+          <label class="field">Nome
+            <input type="text" id="goal-name" required maxlength="40" placeholder="Es. Vacanza">
+          </label>
+          <label class="field">Importo
+            <span class="money">
+              <input type="number" id="goal-amount" required min="1" step="0.01" inputmode="decimal" placeholder="0,00">
+              <span class="suffix">€</span>
+            </span>
+          </label>
+          <label class="field">Entro (facoltativo)
+            <input type="month" id="goal-deadline">
+          </label>
+          <button type="submit" class="btn primary">
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+            Aggiungi
+          </button>
+        </form>
+
+        <details class="card settled-card" id="goals-done-card">
+          <summary><h2>Completati (<span id="goals-done-count">0</span>)</h2></summary>
+          <ul id="goals-done" class="expense-list goals-done"></ul>
+        </details>
+
         <div class="card">
           <label class="field">Obiettivo del cassetto
             <span class="money">
@@ -419,6 +453,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=21"></script>
+  <script src="app.js?v=22"></script>
 </body>
 </html>

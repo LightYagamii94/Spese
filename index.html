@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Nessuna connessione verso l'esterno: script, stili e dati restano locali. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>Le mie spese</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>Le mie spese</h1>
+
+    <!-- Schermata di sblocco / creazione password -->
+    <section id="lock-screen" class="card">
+      <p id="lock-intro"></p>
+      <form id="lock-form">
+        <label>Password
+          <input type="password" id="password" autocomplete="current-password" required minlength="8">
+        </label>
+        <label id="confirm-wrap" hidden>Ripeti password
+          <input type="password" id="password-confirm" autocomplete="new-password" minlength="8">
+        </label>
+        <button type="submit" id="lock-submit">Sblocca</button>
+        <p id="lock-error" class="error" role="alert"></p>
+      </form>
+      <details>
+        <summary>Ripristina da un backup</summary>
+        <p class="hint">Carica un file di backup cifrato esportato in precedenza. Sostituirà i dati presenti su questo dispositivo.</p>
+        <input type="file" id="import-locked" accept=".json,application/json">
+      </details>
+    </section>
+
+    <!-- App vera e propria (visibile solo dopo lo sblocco) -->
+    <section id="app" hidden>
+      <div class="toolbar">
+        <label>Mese
+          <input type="month" id="month">
+        </label>
+        <span class="spacer"></span>
+        <button type="button" id="export">Esporta backup</button>
+        <label class="button">Importa backup
+          <input type="file" id="import" accept=".json,application/json" hidden>
+        </label>
+        <button type="button" id="lock">Blocca</button>
+      </div>
+
+      <form id="expense-form" class="card grid">
+        <label>Data
+          <input type="date" id="date" required>
+        </label>
+        <label>Descrizione
+          <input type="text" id="description" required maxlength="120">
+        </label>
+        <label>Categoria
+          <input type="text" id="category" list="categories" required maxlength="40">
+          <datalist id="categories"></datalist>
+        </label>
+        <label>Importo (€)
+          <input type="number" id="amount" step="0.01" min="0.01" required inputmode="decimal">
+        </label>
+        <button type="submit">Aggiungi</button>
+      </form>
+
+      <div class="card">
+        <h2>Totale del mese: <span id="total">0,00 €</span></h2>
+        <ul id="by-category" class="bars"></ul>
+      </div>
+
+      <div class="card">
+        <table>
+          <thead>
+            <tr><th>Data</th><th>Descrizione</th><th>Categoria</th><th class="num">Importo</th><th></th></tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <p id="empty" class="hint">Nessuna spesa in questo mese.</p>
+      </div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

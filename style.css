@@ -412,6 +412,99 @@ input.rename:focus { background: var(--surface); }
 .sub-form input { background: var(--surface); }
 .sub-empty { color: var(--muted); font-size: 0.9rem; padding: 10px 4px; margin: 0; }
 
+/* ================= Pagina conti ================= */
+
+.hero-side { margin: 0; font-weight: 600; opacity: 0.85; }
+
+.add-account {
+  display: grid;
+  grid-template-columns: auto 1fr 170px auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.emoji-btn {
+  width: 52px;
+  height: 52px;
+  font-size: 1.7rem;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  cursor: pointer;
+  padding: 0;
+  flex: none;
+  transition: transform 0.1s, border-color 0.15s, box-shadow 0.15s;
+}
+.emoji-btn:hover { border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent); }
+.emoji-btn:active { transform: scale(0.94); }
+.emoji-btn:focus { outline: none; }
+.emoji-btn:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); }
+.add-account .emoji-btn { width: 42px; height: 42px; font-size: 1.35rem; border-radius: var(--radius-sm); }
+
+.account-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 14px;
+}
+.account-list li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas: "emoji name del" "emoji balance balance";
+  gap: 6px 12px;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+.account-list .emoji-btn { grid-area: emoji; }
+.account-list .rename { grid-area: name; font-weight: 700; font-size: 1.02rem; padding: 0 12px; }
+.account-list .icon-btn { grid-area: del; }
+.account-list .money { grid-area: balance; }
+.account-list .money input { font-size: 1.15rem; font-weight: 700; text-align: left; padding-left: 12px; }
+.account-list .money.negative input { color: var(--danger); }
+
+.emoji-dialog {
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-lift);
+}
+.emoji-dialog::backdrop { background: rgba(10, 12, 25, 0.45); backdrop-filter: blur(3px); }
+.emoji-dialog-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.emoji-dialog-head h2 { margin: 0; }
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  gap: 4px;
+  max-height: 300px;
+  overflow-y: auto;
+  margin-bottom: 14px;
+}
+.emoji-grid button {
+  font-size: 1.5rem;
+  height: 44px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.emoji-grid button:hover, .emoji-grid button:focus-visible { background: var(--surface-2); outline: none; }
+.emoji-grid button[aria-pressed="true"] { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
+.emoji-custom { display: flex; gap: 10px; align-items: end; }
+
 /* ================= Telefono ================= */
 
 @media (max-width: 720px) {
@@ -427,7 +520,16 @@ input.rename:focus { background: var(--surface); }
   .form-grid .btn { grid-area: btn; }
 }
 
+@media (max-width: 720px) {
+  .add-account { grid-template-columns: auto 1fr; }
+  .add-account .field:nth-of-type(2), .add-account .btn { grid-column: 1 / -1; }
+}
+
 @media (max-width: 560px) {
+  .tab { padding: 10px 6px; gap: 6px; font-size: 0.9rem; }
+  .tab-label { font-size: 0; }
+  .tab-label::after { content: "Aree"; font-size: 0.9rem; }
+  .account-list { grid-template-columns: 1fr; }
   .actions .btn span { display: none; }
   .actions .btn { padding: 0 11px; }
   .hero-value { font-size: 1.8rem; }

@@ -18,10 +18,11 @@ function load() {
     const parsed = raw ? JSON.parse(raw) : null;
     if (parsed && Array.isArray(parsed.expenses)) {
       if (!Array.isArray(parsed.areas)) parsed.areas = [];
+      if (!Array.isArray(parsed.accounts)) parsed.accounts = [];
       return parsed;
     }
   } catch {}
-  return { expenses: [], areas: [] };
+  return { expenses: [], areas: [], accounts: [] };
 }
 
 function save() {
@@ -455,13 +456,168 @@ function mergeAreas(list) {
   save();
 }
 
+// ---------- Conti ----------
+
+const DEFAULT_ACCOUNT_EMOJI = '🏦';
+const EMOJIS = [
+  '🏦', '💳', '💰', '💵', '💶', '🪙', '🐷', '👛', '👜', '💼', '📈', '📊', '💎', '🔒', '🧾', '🏧',
+  '🏠', '🚗', '✈️', '🏖️', '🧳', '🎓', '🏥', '🛒', '🎁', '🎉', '🍕', '☕', '🎮', '🎵', '📚', '🏋️',
+  '📱', '💻', '🔧', '⚡', '🔥', '🌱', '🍀', '☀️', '🌍', '🌈', '⭐', '❤️', '🎯', '🐶', '🐱', '👶',
+  '🔵', '🟢', '🟡', '🟠', '🔴', '🟣', '⚫', '⚪',
+];
+
+// Gli importi dei conti possono essere negativi (es. carta di credito, scoperto).
+const parseAmount = (v) => {
+  const n = Math.round(parseFloat(String(v).replace(',', '.')) * 100) / 100;
+  return Number.isFinite(n) ? n : 0;
+};
+
+// Prende solo il primo "carattere visibile" (un'emoji può essere fatta di più codepoint).
+function firstGrapheme(text) {
+  const t = text.trim();
+  if (!t) return '';
+  if (typeof Intl.Segmenter === 'function') {
+    const first = new Intl.Segmenter('it', { granularity: 'grapheme' }).segment(t)[Symbol.iterator]().next().value;
+    return first ? first.segment : '';
+  }
+  return Array.from(t)[0];
+}
+
+let emojiCallback = null;
+
+function openEmojiPicker(current, onPick) {
+  emojiCallback = onPick;
+  const buttons = EMOJIS.map((e) => {
+    const b = el('button', { type: 'button', textContent: e });
+    b.setAttribute('aria-label', `Usa ${e}`);
+    b.setAttribute('aria-pressed', String(e === current));
+    b.addEventListener('click', () => pickEmoji(e));
+    return b;
+  });
+  $('emoji-grid').replaceChildren(...buttons);
+  $('emoji-input').value = EMOJIS.includes(current) ? '' : current;
+  $('emoji-dialog').showModal();
+  (buttons.find((b) => b.getAttribute('aria-pressed') === 'true') || buttons[0]).focus();
+}
+
+function pickEmoji(e) {
+  const cb = emojiCallback;
+  emojiCallback = null;
+  $('emoji-dialog').close();
+  if (cb && e) cb(e);
+}
+
+$('emoji-close').addEventListener('click', () => $('emoji-dialog').close());
+// Clic fuori dal riquadro (sullo sfondo scuro) = chiudi.
+$('emoji-dialog').addEventListener('click', (e) => {
+  if (e.target === $('emoji-dialog')) $('emoji-dialog').close();
+});
+$('emoji-custom').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const v = firstGrapheme($('emoji-input').value);
+  if (v) pickEmoji(v);
+});
+
+let newAccountEmoji = DEFAULT_ACCOUNT_EMOJI;
+$('account-emoji').addEventListener('click', () => {
+  openEmojiPicker(newAccountEmoji, (e) => {
+    newAccountEmoji = e;
+    $('account-emoji').textContent = e;
+  });
+});
+
+function renderAccounts() {
+  const total = data.accounts.reduce((s, a) => s + a.balance, 0);
+  $('accounts-total').textContent = euro.format(total);
+  const n = data.accounts.length;
+  $('accounts-count').textContent = n === 0 ? '' : n === 1 ? '1 conto' : `${n} conti`;
+  $('account-empty').hidden = n > 0;
+
+  const items = data.accounts.map((a) => {
+    const emoji = el('button', { type: 'button', className: 'emoji-btn', textContent: a.emoji });
+    emoji.setAttribute('aria-label', `Cambia emoji di ${a.name}`);
+    emoji.addEventListener('click', () => {
+      openEmojiPicker(a.emoji, (e) => {
+        a.emoji = e;
+        save();
+        renderAccounts();
+      });
+    });
+
+    const name = el('input', { className: 'rename', value: a.name, maxLength: 40, required: true });
+    name.setAttribute('aria-label', 'Nome conto');
+    name.addEventListener('change', () => {
+      const v = name.value.trim();
+      if (v) { a.name = v; save(); }
+      renderAccounts();
+    });
+
+    const balance = el('input', { type: 'number', step: '0.01', inputMode: 'decimal', value: a.balance.toFixed(2) });
+    balance.setAttribute('aria-label', `Saldo di ${a.name}`);
+    const wrap = el('span', { className: `money${a.balance < 0 ? ' negative' : ''}` }, balance, el('span', { className: 'suffix', textContent: '€' }));
+    balance.addEventListener('change', () => {
+      a.balance = parseAmount(balance.value);
+      save();
+      renderAccounts();
+    });
+
+    const del = iconButton('trash', `Elimina il conto ${a.name}`, 'danger');
+    del.addEventListener('click', () => {
+      if (!confirm(`Eliminare il conto "${a.name}"?`)) return;
+      data.accounts = data.accounts.filter((x) => x.id !== a.id);
+      save();
+      renderAccounts();
+    });
+
+    return el('li', {}, emoji, name, del, wrap);
+  });
+  $('account-list').replaceChildren(...items);
+}
+
+$('account-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const v = $('account-name').value.trim();
+  if (!v) return;
+  data.accounts.push({
+    id: crypto.randomUUID(),
+    name: v,
+    emoji: newAccountEmoji,
+    balance: parseAmount($('account-balance').value || 0),
+  });
+  save();
+  $('account-name').value = '';
+  $('account-balance').value = '';
+  newAccountEmoji = DEFAULT_ACCOUNT_EMOJI;
+  $('account-emoji').textContent = newAccountEmoji;
+  renderAccounts();
+});
+
+function mergeAccounts(list) {
+  const ids = new Set(data.accounts.map((x) => x.id));
+  for (const a of list) {
+    if (a && a.id && !ids.has(a.id) && typeof a.name === 'string') {
+      data.accounts.push({
+        id: String(a.id),
+        name: a.name,
+        emoji: firstGrapheme(String(a.emoji ?? '')) || DEFAULT_ACCOUNT_EMOJI,
+        balance: parseAmount(a.balance ?? 0),
+      });
+      ids.add(a.id);
+    }
+  }
+  save();
+}
+
 // ---------- Navigazione ----------
 
+const PAGES = { spese: render, aree: renderAreas, conti: renderAccounts };
+
 function showPage() {
-  const page = location.hash === '#aree' ? 'aree' : 'spese';
+  const requested = location.hash.slice(1);
+  const page = Object.hasOwn(PAGES, requested) ? requested : 'spese';
   for (const p of document.querySelectorAll('.page')) p.hidden = p.id !== `page-${page}`;
   for (const t of document.querySelectorAll('.tab')) t.classList.toggle('active', t.dataset.page === page);
-  if (page === 'aree') renderAreas(); else render();
+  PAGES[page]();
 }
 
 window.addEventListener('hashchange', showPage);
@@ -489,9 +645,11 @@ $('import').addEventListener('change', async (e) => {
   }
   let list;
   let areas = [];
+  let accounts = [];
   if (parsed && Array.isArray(parsed.expenses)) {
     list = parsed.expenses;
     if (Array.isArray(parsed.areas)) areas = parsed.areas;
+    if (Array.isArray(parsed.accounts)) accounts = parsed.accounts;
   } else if (isLegacyVault(parsed)) {
     // Backup creato con la vecchia versione protetta da password.
     const password = prompt('Questo backup è protetto da password. Inseriscila per importarlo:');
@@ -509,6 +667,7 @@ $('import').addEventListener('change', async (e) => {
   const before = data.expenses.length;
   mergeExpenses(list);
   mergeAreas(areas);
+  mergeAccounts(accounts);
   showPage();
   alert(`Importate ${data.expenses.length - before} spese.`);
 });

@@ -12,7 +12,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%235b5bf0'/%3E%3Cpath d='M9 12h14v10a2 2 0 0 1-2 2H11a2 2 0 0 1-2-2z' fill='white'/%3E%3Cpath d='M12 12V10a4 4 0 0 1 8 0v2' stroke='white' stroke-width='2' fill='none'/%3E%3C/svg%3E">
   <!-- Il numero di versione (?v=) va aumentato a ogni modifica di style.css o app.js:
        costringe il browser a scaricare i file nuovi invece di usare quelli in cache. -->
-  <link rel="stylesheet" href="style.css?v=6">
+  <link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
   <header class="appbar">
@@ -66,7 +66,11 @@
         </a>
         <a href="#aree" class="tab" data-page="aree">
           <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="13" y="4" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="4" y="13" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="13" y="13" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-          Aree e budget
+          <span class="tab-label">Aree e budget</span>
+        </a>
+        <a href="#conti" class="tab" data-page="conti">
+          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10 12 4l9 6M5 10v8m4.67-8v8m4.66-8v8M19 10v8M3 20h18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Conti
         </a>
       </nav>
 
@@ -141,8 +145,57 @@
         <div id="macro-list" class="macro-list"></div>
         <p id="macro-empty" class="empty">Nessuna macro area. Creane una qui sopra, ad esempio "Casa".</p>
       </div>
+
+      <!-- ===================== CONTI ===================== -->
+      <div id="page-conti" class="page" hidden>
+        <div class="hero">
+          <div>
+            <p class="hero-label">Saldo totale</p>
+            <p class="hero-value" id="accounts-total">0,00 €</p>
+          </div>
+          <p class="hero-side" id="accounts-count"></p>
+        </div>
+
+        <form id="account-form" class="card add-account">
+          <h2 class="span-all">Nuovo conto</h2>
+          <button type="button" id="account-emoji" class="emoji-btn" aria-label="Scegli emoji del nuovo conto">🏦</button>
+          <label class="field">Nome
+            <input type="text" id="account-name" required maxlength="40" placeholder="Es. Conto corrente">
+          </label>
+          <label class="field">Saldo
+            <span class="money">
+              <input type="number" id="account-balance" step="0.01" inputmode="decimal" placeholder="0,00">
+              <span class="suffix">€</span>
+            </span>
+          </label>
+          <button type="submit" class="btn primary">
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+            Aggiungi
+          </button>
+        </form>
+
+        <ul id="account-list" class="account-list"></ul>
+        <p id="account-empty" class="empty">Nessun conto. Creane uno qui sopra, ad esempio "Conto corrente" o "Contanti".</p>
+      </div>
     </section>
   </main>
-  <script src="app.js?v=6"></script>
+  <!-- Selettore emoji (uno solo, condiviso da tutti i conti) -->
+  <dialog id="emoji-dialog" class="emoji-dialog" aria-labelledby="emoji-title">
+    <div class="emoji-dialog-head">
+      <h2 id="emoji-title">Scegli un'emoji</h2>
+      <button type="button" class="icon-btn" id="emoji-close" aria-label="Chiudi">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div id="emoji-grid" class="emoji-grid"></div>
+    <form id="emoji-custom" class="emoji-custom">
+      <label class="field grow">Oppure scrivi o incolla un'emoji qualsiasi
+        <input type="text" id="emoji-input" maxlength="16" placeholder="😀" autocomplete="off">
+      </label>
+      <button type="submit" class="btn primary">Usa</button>
+    </form>
+  </dialog>
+
+  <script src="app.js?v=7"></script>
 </body>
 </html>

@@ -12,7 +12,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%235b5bf0'/%3E%3Cpath d='M9 12h14v10a2 2 0 0 1-2 2H11a2 2 0 0 1-2-2z' fill='white'/%3E%3Cpath d='M12 12V10a4 4 0 0 1 8 0v2' stroke='white' stroke-width='2' fill='none'/%3E%3C/svg%3E">
   <!-- Il numero di versione (?v=) va aumentato a ogni modifica di style.css o app.js:
        costringe il browser a scaricare i file nuovi invece di usare quelli in cache. -->
-  <link rel="stylesheet" href="style.css?v=8">
+  <link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
   <header class="appbar">
@@ -80,6 +80,7 @@
           <div>
             <p class="hero-label">Totale del mese</p>
             <p class="hero-value" id="total">0,00 €</p>
+            <p class="hero-sub" id="budget-hint"></p>
           </div>
           <label class="month-picker">
             <span class="sr-only">Mese</span>
@@ -89,31 +90,37 @@
 
         <form id="expense-form" class="card form-grid">
           <h2 class="span-all">Nuova spesa</h2>
-          <label class="field">Data
+          <label class="field f-desc">Descrizione
+            <input type="text" id="description" required maxlength="120" placeholder="Es. Bolletta della luce">
+          </label>
+          <label class="field f-area">Area
+            <select id="expense-area" required></select>
+          </label>
+          <label class="field f-acct">Pagata con
+            <select id="expense-account"></select>
+          </label>
+          <label class="field f-date">Data
             <input type="date" id="date" required>
           </label>
-          <label class="field">Descrizione
-            <input type="text" id="description" required maxlength="120" placeholder="Es. Spesa al supermercato">
-          </label>
-          <label class="field">Categoria
-            <input type="text" id="category" list="categories" required maxlength="40" placeholder="Es. Alimentari">
-            <datalist id="categories"></datalist>
-          </label>
-          <label class="field">Importo
+          <label class="field f-amount">Importo
             <span class="money">
               <input type="number" id="amount" step="0.01" min="0.01" required inputmode="decimal" placeholder="0,00">
               <span class="suffix">€</span>
             </span>
           </label>
-          <button type="submit" class="btn primary">
+          <button type="submit" class="btn primary f-btn">
             <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
             Aggiungi
           </button>
+          <p id="no-areas" class="notice span-all" hidden>
+            Per registrare una spesa crea prima almeno una macro area con una sotto area nella pagina
+            <a href="#aree">Aree e budget</a>.
+          </p>
         </form>
 
-        <div class="card" id="by-category-card">
-          <h2>Per categoria</h2>
-          <ul id="by-category" class="bars"></ul>
+        <div class="card" id="budget-card">
+          <h2>Budget del mese</h2>
+          <ul id="budget-list" class="budget-list"></ul>
         </div>
 
         <div class="card">
@@ -155,6 +162,7 @@
           </div>
           <p class="hero-side" id="accounts-count"></p>
         </div>
+        <p class="hint page-hint">Il saldo di ogni conto si aggiorna da solo con le spese pagate da quel conto. Se non corrisponde a quello reale, correggilo scrivendo il valore giusto.</p>
 
         <form id="account-form" class="card add-account">
           <h2 class="span-all">Nuovo conto</h2>
@@ -196,6 +204,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=8"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>

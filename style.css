@@ -161,7 +161,7 @@ main {
   min-width: 0;
 }
 
-input {
+input, select {
   font: inherit;
   font-size: 0.95rem;
   color: var(--text);
@@ -175,7 +175,17 @@ input {
   transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
 input::placeholder { color: color-mix(in srgb, var(--muted) 70%, transparent); }
-input:focus {
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 34px;
+  cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+input:focus, select:focus {
   outline: none;
   border-color: var(--accent);
   background: var(--surface);
@@ -277,18 +287,56 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
 
 .form-grid {
   display: grid;
-  grid-template-columns: 150px 1fr 1fr 130px auto;
+  grid-template-columns: 1fr 1fr 1fr auto;
+  grid-template-areas:
+    "title title title title"
+    "desc desc area area"
+    "date amount acct btn"
+    "note note note note";
   gap: 12px;
   align-items: end;
 }
+.form-grid h2 { grid-area: title; }
+.f-desc { grid-area: desc; }
+.f-area { grid-area: area; }
+.f-acct { grid-area: acct; }
+.f-date { grid-area: date; }
+.f-amount { grid-area: amount; }
+.f-btn { grid-area: btn; }
+.form-grid .notice { grid-area: note; }
+
+.notice {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+.notice a { color: var(--accent); font-weight: 600; }
+.page-hint { margin: -4px 4px 14px; font-size: 0.85rem; }
+
+.hero-sub { margin: 4px 0 0; font-size: 0.85rem; opacity: 0.9; font-weight: 500; }
+
+/* Budget del mese */
+.budget-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 16px; }
+.budget-macro { display: grid; gap: 8px; }
+.budget-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: baseline; }
+.budget-row .label { font-weight: 650; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.budget-row .value { font-variant-numeric: tabular-nums; font-size: 0.9rem; color: var(--muted); white-space: nowrap; }
+.budget-row .value b { color: var(--text); }
+.budget-row .track { grid-column: 1 / -1; height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.budget-row .bar { height: 100%; border-radius: 99px; background: linear-gradient(90deg, #22c55e, #10b981); }
+.budget-row.warn .bar { background: linear-gradient(90deg, #f59e0b, #f97316); }
+.budget-row.over .bar { background: linear-gradient(90deg, #ef4444, #e11d48); }
+.budget-row.over .value b { color: var(--danger); }
+.budget-row.none .bar { background: color-mix(in srgb, var(--muted) 45%, transparent); }
+.budget-subs { list-style: none; margin: 0; padding: 0 0 0 14px; border-left: 2px solid var(--border); display: grid; gap: 8px; }
+.budget-subs .budget-row .label { font-weight: 500; font-size: 0.9rem; }
+.budget-subs .track { height: 5px; }
+.budget-macro .dot { display: inline-block; width: 10px; height: 10px; border-radius: 4px; margin-right: 8px; vertical-align: 0; }
 .span-all { grid-column: 1 / -1; margin-bottom: 0; }
 
-.bars { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
-.bars li { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; align-items: center; }
-.bars .cat { font-weight: 600; }
-.bars .num { font-weight: 600; font-variant-numeric: tabular-nums; }
-.bars .track { grid-column: 1 / -1; height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
-.bars .bar { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
 
 .expense-list { list-style: none; padding: 0; margin: 0; }
 .expense-list li {
@@ -311,6 +359,8 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
 .date-badge b { font-size: 1.05rem; }
 .date-badge small { font-size: 0.68rem; text-transform: uppercase; font-weight: 600; }
 .expense-main { min-width: 0; }
+.expense-main .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.chip.muted { opacity: 0.75; font-style: italic; }
 .expense-main .desc { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chip {
   display: inline-block;
@@ -512,14 +562,8 @@ input.rename:focus { background: var(--surface); }
 @media (max-width: 720px) {
   .form-grid {
     grid-template-columns: 1fr 1fr;
-    grid-template-areas: "title title" "desc desc" "cat cat" "date amount" "btn btn";
+    grid-template-areas: "title title" "desc desc" "area area" "acct acct" "date amount" "btn btn" "note note";
   }
-  .form-grid h2 { grid-area: title; }
-  .form-grid .field:nth-of-type(1) { grid-area: date; }
-  .form-grid .field:nth-of-type(2) { grid-area: desc; }
-  .form-grid .field:nth-of-type(3) { grid-area: cat; }
-  .form-grid .field:nth-of-type(4) { grid-area: amount; }
-  .form-grid .btn { grid-area: btn; }
 }
 
 @media (max-width: 720px) {

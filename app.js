@@ -95,7 +95,10 @@ function mergeExpenses(list) {
         id: String(x.id),
         date: x.date,
         description: String(x.description ?? ''),
-        category: String(x.category ?? ''),
+        // Collegamenti a sotto area e conto (le spese più vecchie hanno solo `category`).
+        ...(x.subId ? { subId: String(x.subId) } : {}),
+        ...(x.accountId ? { accountId: String(x.accountId) } : {}),
+        ...(x.category ? { category: String(x.category) } : {}),
         amount: x.amount,
       });
       ids.add(x.id);
@@ -147,9 +150,79 @@ function moneyInput(props) {
   return { input, wrap: el('span', { className: 'money' }, input, el('span', { className: 'suffix', textContent: '€' })) };
 }
 
+// ---------- Collegamenti tra spese, aree e conti ----------
+
+function findSub(subId) {
+  for (const macro of data.areas) {
+    const sub = macro.subs.find((x) => x.id === subId);
+    if (sub) return { macro, sub };
+  }
+  return null;
+}
+
+const findAccount = (id) => data.accounts.find((a) => a.id === id);
+
+// Il saldo salvato di un conto è il "saldo di partenza": quello mostrato è
+// il saldo di partenza meno tutte le spese pagate con quel conto.
+const spentFromAccount = (a) => data.expenses.reduce((s, x) => (x.accountId === a.id ? s + x.amount : s), 0);
+const currentBalance = (a) => Math.round((a.balance - spentFromAccount(a)) * 100) / 100;
+
+// Ultima area e ultimo conto usati: proposti di nuovo alla spesa successiva.
+const LAST_KEY = 'spese.ui.last';
+function readLast() {
+  try {
+    return JSON.parse(localStorage.getItem(LAST_KEY)) || {};
+  } catch {
+    return {};
+  }
+}
+function saveLast(v) {
+  try {
+    localStorage.setItem(LAST_KEY, JSON.stringify(v));
+  } catch {}
+}
+
+function fillExpenseSelects() {
+  const last = readLast();
+  const areaSel = $('expense-area');
+  const prevArea = areaSel.value || last.subId;
+  const groups = data.areas
+    .filter((m) => m.subs.length)
+    .map((m) => el('optgroup', { label: m.name }, ...m.subs.map((sub) => el('option', { value: sub.id, textContent: `${m.name} › ${sub.name}` }))));
+  areaSel.replaceChildren(el('option', { value: '', textContent: 'Scegli un\'area…', disabled: true }), ...groups);
+  areaSel.value = findSub(prevArea) ? prevArea : '';
+
+  const acctSel = $('expense-account');
+  const prevAcct = acctSel.dataset.touched ? acctSel.value : last.accountId ?? acctSel.value;
+  acctSel.replaceChildren(
+    el('option', { value: '', textContent: 'Nessun conto' }),
+    ...data.accounts.map((a) => el('option', { value: a.id, textContent: `${a.emoji} ${a.name}` })));
+  acctSel.value = findAccount(prevAcct) ? prevAcct : '';
+
+  const hasAreas = groups.length > 0;
+  $('no-areas').hidden = hasAreas;
+  for (const c of $('expense-form').querySelectorAll('input, select, button')) c.disabled = !hasAreas;
+}
+
+$('expense-account').addEventListener('change', (e) => { e.target.dataset.touched = '1'; });
+
 const MONTHS = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
 
+function budgetRow(label, spent, budget, extra) {
+  // Senza budget non c'è un limite da sforare: barra neutra.
+  const ratio = budget > 0 ? spent / budget : spent > 0 ? 1 : 0;
+  const state = budget <= 0 ? 'none' : ratio > 1 ? 'over' : ratio >= 0.8 ? 'warn' : '';
+  const bar = el('div', { className: 'bar' });
+  bar.style.width = `${Math.min(ratio, 1) * 100}%`;
+  const value = el('span', { className: 'value' }, el('b', { textContent: euro.format(spent) }),
+    budget > 0 ? ` di ${euro.format(budget)}` : ' · nessun budget');
+  const labelEl = el('span', { className: 'label' }, ...(extra ? [extra] : []), label);
+  labelEl.title = label;
+  return el('div', { className: `budget-row ${state}`.trim() }, labelEl, value, el('div', { className: 'track' }, bar));
+}
+
 function render() {
+  fillExpenseSelects();
   const month = $('month').value;
   const items = data.expenses
     .filter((x) => x.date.startsWith(month))
@@ -157,9 +230,18 @@ function render() {
 
   const rows = items.map((x) => {
     const [, mo, d] = x.date.split('-');
+    const found = x.subId ? findSub(x.subId) : null;
+    const account = x.accountId ? findAccount(x.accountId) : null;
+    const tags = [];
+    if (found) tags.push(el('span', { className: 'chip', textContent: `${found.macro.name} › ${found.sub.name}` }));
+    else if (x.category) tags.push(el('span', { className: 'chip muted', textContent: x.category }));
+    else tags.push(el('span', { className: 'chip muted', textContent: x.subId ? 'Area eliminata' : 'Senza area' }));
+    if (account) tags.push(el('span', { className: 'chip', textContent: `${account.emoji} ${account.name}` }));
+
     const del = iconButton('trash', `Elimina ${x.description}`, 'danger');
     del.addEventListener('click', () => {
-      if (!confirm(`Eliminare "${x.description}"?`)) return;
+      const back = account ? `\n${euro.format(x.amount)} torneranno sul conto "${account.name}".` : '';
+      if (!confirm(`Eliminare "${x.description}"?${back}`)) return;
       data.expenses = data.expenses.filter((y) => y.id !== x.id);
       save();
       render();
@@ -168,7 +250,7 @@ function render() {
       el('span', { className: 'date-badge' }, el('b', { textContent: d }), el('small', { textContent: MONTHS[Number(mo) - 1] })),
       el('div', { className: 'expense-main' },
         el('div', { className: 'desc', textContent: x.description }),
-        el('span', { className: 'chip', textContent: x.category })),
+        el('div', { className: 'tags' }, ...tags)),
       el('span', { className: 'expense-amount', textContent: euro.format(x.amount) }),
       del);
   });
@@ -178,38 +260,50 @@ function render() {
   const total = items.reduce((s, x) => s + x.amount, 0);
   $('total').textContent = euro.format(total);
 
-  const byCat = {};
-  for (const x of items) byCat[x.category] = (byCat[x.category] || 0) + x.amount;
-  const max = Math.max(0, ...Object.values(byCat));
-  const bars = Object.entries(byCat)
-    .sort((a, b) => b[1] - a[1])
-    .map(([cat, sum]) => {
-      const bar = el('div', { className: 'bar' });
-      bar.style.width = `${(sum / max) * 100}%`;
-      return el('li', {},
-        el('span', { className: 'cat', textContent: cat }),
-        el('span', { className: 'num', textContent: euro.format(sum) }),
-        el('div', { className: 'track' }, bar));
-    });
-  $('by-category').replaceChildren(...bars);
-  $('by-category-card').hidden = bars.length === 0;
+  // Budget del mese: speso per sotto area e per macro area.
+  const spentBySub = {};
+  let unassigned = 0;
+  for (const x of items) {
+    if (x.subId && findSub(x.subId)) spentBySub[x.subId] = (spentBySub[x.subId] || 0) + x.amount;
+    else unassigned += x.amount;
+  }
+  const totalBudget = data.areas.reduce((s, m) => s + macroBudget(m), 0);
+  $('budget-hint').textContent = totalBudget > 0
+    ? `su ${euro.format(totalBudget)} di budget · ${total <= totalBudget ? `restano ${euro.format(totalBudget - total)}` : `sforato di ${euro.format(total - totalBudget)}`}`
+    : '';
 
-  const cats = [...new Set(data.expenses.map((x) => x.category))].sort();
-  $('categories').replaceChildren(...cats.map((c) => el('option', { value: c })));
+  const blocks = data.areas
+    .filter((m) => m.subs.length)
+    .map((m) => {
+      const spent = m.subs.reduce((s, sub) => s + (spentBySub[sub.id] || 0), 0);
+      const dot = el('span', { className: 'dot' });
+      dot.style.background = AVATAR_COLORS[data.areas.indexOf(m) % AVATAR_COLORS.length];
+      return el('li', { className: 'budget-macro' },
+        budgetRow(m.name, spent, macroBudget(m), dot),
+        el('ul', { className: 'budget-subs' },
+          ...m.subs.map((sub) => el('li', {}, budgetRow(sub.name, spentBySub[sub.id] || 0, sub.budget)))));
+    });
+  if (unassigned > 0) blocks.push(el('li', { className: 'budget-macro' }, budgetRow('Senza area', unassigned, 0)));
+  $('budget-list').replaceChildren(...blocks);
+  $('budget-card').hidden = blocks.length === 0;
 }
 
 $('expense-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const amount = Math.round(parseFloat($('amount').value) * 100) / 100;
-  if (!(amount > 0)) return;
+  const subId = $('expense-area').value;
+  if (!(amount > 0) || !findSub(subId)) return;
+  const accountId = $('expense-account').value;
   data.expenses.push({
     id: crypto.randomUUID(),
     date: $('date').value,
     description: $('description').value.trim(),
-    category: $('category').value.trim(),
+    subId,
+    ...(findAccount(accountId) ? { accountId } : {}),
     amount,
   });
   save();
+  saveLast({ subId, accountId });
   $('month').value = $('date').value.slice(0, 7);
   $('description').value = '';
   $('amount').value = '';
@@ -343,7 +437,10 @@ function renderAreas() {
     const del = iconButton('trash', `Elimina la macro area ${m.name}`, 'danger');
     del.addEventListener('click', () => {
       const extra = m.subs.length ? ` e le sue ${m.subs.length} sotto aree` : '';
-      if (!confirm(`Eliminare la macro area "${m.name}"${extra}?`)) return;
+      const subIds = new Set(m.subs.map((x) => x.id));
+      const linked = data.expenses.filter((x) => subIds.has(x.subId)).length;
+      const note = linked ? `\nLe ${linked} spese collegate resteranno registrate, ma senza area.` : '';
+      if (!confirm(`Eliminare la macro area "${m.name}"${extra}?${note}`)) return;
       data.areas = data.areas.filter((x) => x.id !== m.id);
       collapsed.delete(m.id);
       saveCollapsed();
@@ -392,7 +489,9 @@ function renderAreas() {
 
       const subDel = iconButton('trash', `Elimina ${sub.name}`, 'danger');
       subDel.addEventListener('click', () => {
-        if (!confirm(`Eliminare la sotto area "${sub.name}"?`)) return;
+        const linked = data.expenses.filter((x) => x.subId === sub.id).length;
+        const note = linked ? `\nLe ${linked} spese collegate resteranno registrate, ma senza area.` : '';
+        if (!confirm(`Eliminare la sotto area "${sub.name}"?${note}`)) return;
         m.subs = m.subs.filter((x) => x.id !== sub.id);
         save();
         renderAreas();
@@ -543,7 +642,7 @@ $('account-emoji').addEventListener('click', () => {
 });
 
 function renderAccounts() {
-  const total = data.accounts.reduce((s, a) => s + a.balance, 0);
+  const total = data.accounts.reduce((s, a) => s + currentBalance(a), 0);
   $('accounts-total').textContent = euro.format(total);
   const n = data.accounts.length;
   $('accounts-count').textContent = n === 0 ? '' : n === 1 ? '1 conto' : `${n} conti`;
@@ -568,18 +667,22 @@ function renderAccounts() {
       renderAccounts();
     });
 
-    const balance = el('input', { type: 'number', step: '0.01', inputMode: 'decimal', value: a.balance.toFixed(2) });
+    const now = currentBalance(a);
+    const balance = el('input', { type: 'number', step: '0.01', inputMode: 'decimal', value: now.toFixed(2) });
     balance.setAttribute('aria-label', `Saldo di ${a.name}`);
-    const wrap = el('span', { className: `money${a.balance < 0 ? ' negative' : ''}` }, balance, el('span', { className: 'suffix', textContent: '€' }));
+    const wrap = el('span', { className: `money${now < 0 ? ' negative' : ''}` }, balance, el('span', { className: 'suffix', textContent: '€' }));
     balance.addEventListener('change', () => {
-      a.balance = parseAmount(balance.value);
+      // Il valore scritto diventa il saldo attuale: si ricalcola il saldo di partenza.
+      a.balance = Math.round((parseAmount(balance.value) + spentFromAccount(a)) * 100) / 100;
       save();
       renderAccounts();
     });
 
     const del = iconButton('trash', `Elimina il conto ${a.name}`, 'danger');
     del.addEventListener('click', () => {
-      if (!confirm(`Eliminare il conto "${a.name}"?`)) return;
+      const linked = data.expenses.filter((x) => x.accountId === a.id).length;
+      const note = linked ? `\nLe ${linked} spese pagate con questo conto resteranno registrate.` : '';
+      if (!confirm(`Eliminare il conto "${a.name}"?${note}`)) return;
       data.accounts = data.accounts.filter((x) => x.id !== a.id);
       save();
       renderAccounts();

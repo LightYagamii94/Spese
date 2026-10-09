@@ -10,14 +10,16 @@
   <meta name="theme-color" content="#5b5bf0">
   <title>Le mie spese</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%235b5bf0'/%3E%3Cpath d='M9 12h14v10a2 2 0 0 1-2 2H11a2 2 0 0 1-2-2z' fill='white'/%3E%3Cpath d='M12 12V10a4 4 0 0 1 8 0v2' stroke='white' stroke-width='2' fill='none'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css">
+  <!-- Il numero di versione (?v=) va aumentato a ogni modifica di style.css o app.js:
+       costringe il browser a scaricare i file nuovi invece di usare quelli in cache. -->
+  <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
   <header class="appbar">
     <div class="appbar-inner">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <svg viewBox="0 0 24 24"><path d="M3 7a3 3 0 0 1 3-3h11a1 1 0 0 1 1 1v2h1a2 2 0 0 1 2 2v9a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="16.5" cy="13.5" r="1.5" fill="currentColor"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24"><path d="M3 7a3 3 0 0 1 3-3h11a1 1 0 0 1 1 1v2h1a2 2 0 0 1 2 2v9a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="16.5" cy="13.5" r="1.5" fill="currentColor"/></svg>
         </span>
         <div>
           <h1>Le mie spese</h1>
@@ -26,11 +28,11 @@
       </div>
       <div class="actions">
         <button type="button" id="export" class="btn ghost" title="Scarica un file di backup">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <span>Esporta</span>
         </button>
         <label class="btn ghost" title="Carica un file di backup">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0L8 8m4-4 4 4M5 19h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0L8 8m4-4 4 4M5 19h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <span>Importa</span>
           <input type="file" id="import" accept=".json,application/json" hidden>
         </label>
@@ -59,11 +61,11 @@
     <section id="app">
       <nav class="tabs" aria-label="Sezioni">
         <a href="#spese" class="tab" data-page="spese">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
           Spese
         </a>
         <a href="#aree" class="tab" data-page="aree">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="13" y="4" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="4" y="13" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="13" y="13" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="13" y="4" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="4" y="13" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="13" y="13" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
           Aree e budget
         </a>
       </nav>
@@ -100,7 +102,7 @@
             </span>
           </label>
           <button type="submit" class="btn primary">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
             Aggiungi
           </button>
         </form>
@@ -131,7 +133,7 @@
             <input type="text" id="macro-name" required maxlength="40" placeholder="Es. Casa">
           </label>
           <button type="submit" class="btn primary">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
             Aggiungi
           </button>
         </form>
@@ -141,6 +143,6 @@
       </div>
     </section>
   </main>
-  <script src="app.js"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>

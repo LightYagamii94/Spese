@@ -120,6 +120,8 @@ function icon(name) {
   const NS = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', '18');
+  svg.setAttribute('height', '18');
   svg.setAttribute('aria-hidden', 'true');
   const path = document.createElementNS(NS, 'path');
   path.setAttribute('d', ICONS[name]);

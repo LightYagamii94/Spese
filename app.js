@@ -1713,7 +1713,7 @@ updateDebtBadge();
 
 // ---------- Versione e aggiornamenti ----------
 // Da aumentare insieme a version.json e ai ?v= di index.html a ogni modifica.
-const APP_VERSION = 19;
+const APP_VERSION = 20;
 $('app-version').textContent = `Versione ${APP_VERSION}`;
 
 // L'app installata può restare aperta in memoria per giorni: quando torna in

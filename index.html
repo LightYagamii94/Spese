@@ -7,7 +7,9 @@
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; form-action 'none'; base-uri 'none'">
   <meta name="referrer" content="no-referrer">
-  <meta name="theme-color" content="#5b5bf0">
+  <!-- Colore delle barre di sistema del telefono: uguale allo sfondo della pagina -->
+  <meta name="theme-color" content="#f3f4fa" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0f1117" media="(prefers-color-scheme: dark)">
   <title>Le mie spese</title>
   <link rel="icon" href="icons/icon-192.png" type="image/png">
   <link rel="manifest" href="manifest.webmanifest">
@@ -17,9 +19,10 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Spese">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="color-scheme" content="light dark">
   <!-- Il numero di versione (?v=) va aumentato a ogni modifica di style.css o app.js:
        costringe il browser a scaricare i file nuovi invece di usare quelli in cache. -->
-  <link rel="stylesheet" href="style.css?v=19">
+  <link rel="stylesheet" href="style.css?v=20">
 </head>
 <body>
   <header class="appbar">
@@ -376,6 +379,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=19"></script>
+  <script src="app.js?v=20"></script>
 </body>
 </html>

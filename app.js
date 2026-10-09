@@ -16,9 +16,12 @@ function load() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : null;
-    if (parsed && Array.isArray(parsed.expenses)) return parsed;
+    if (parsed && Array.isArray(parsed.expenses)) {
+      if (!Array.isArray(parsed.areas)) parsed.areas = [];
+      return parsed;
+    }
   } catch {}
-  return { expenses: [] };
+  return { expenses: [], areas: [] };
 }
 
 function save() {
@@ -59,7 +62,7 @@ function finishMigration() {
   localStorage.removeItem(LEGACY_VAULT_KEY);
   $('migrate').hidden = true;
   $('app').hidden = false;
-  render();
+  showPage();
 }
 
 $('migrate-form').addEventListener('submit', async (e) => {
@@ -181,6 +184,144 @@ $('expense-form').addEventListener('submit', (e) => {
 
 $('month').addEventListener('change', render);
 
+// ---------- Macro aree e sotto aree ----------
+
+const parseBudget = (v) => {
+  const n = Math.round(parseFloat(String(v).replace(',', '.')) * 100) / 100;
+  return n >= 0 ? n : 0;
+};
+
+const macroBudget = (m) => m.subs.reduce((s, x) => s + x.budget, 0);
+
+function el(tag, props = {}, ...children) {
+  const node = Object.assign(document.createElement(tag), props);
+  node.append(...children);
+  return node;
+}
+
+function renderAreas() {
+  $('macro-empty').hidden = data.areas.length > 0;
+  $('budget-total').textContent = euro.format(data.areas.reduce((s, m) => s + macroBudget(m), 0));
+
+  const cards = data.areas.map((m) => {
+    const name = el('input', { className: 'rename name', value: m.name, maxLength: 40, required: true });
+    name.setAttribute('aria-label', 'Nome macro area');
+    name.addEventListener('change', () => {
+      const v = name.value.trim();
+      if (v) { m.name = v; save(); }
+      renderAreas();
+    });
+
+    const del = el('button', { type: 'button', className: 'link', textContent: 'Elimina macro area' });
+    del.addEventListener('click', () => {
+      const extra = m.subs.length ? ` e le sue ${m.subs.length} sotto aree` : '';
+      if (!confirm(`Eliminare la macro area "${m.name}"${extra}?`)) return;
+      data.areas = data.areas.filter((x) => x.id !== m.id);
+      save();
+      renderAreas();
+    });
+
+    const head = el('div', { className: 'macro-head' },
+      name,
+      el('span', { className: 'macro-budget', textContent: `${euro.format(macroBudget(m))} / mese` }),
+      del);
+
+    const subs = m.subs.map((sub) => {
+      const subName = el('input', { className: 'rename', value: sub.name, maxLength: 40, required: true });
+      subName.setAttribute('aria-label', 'Nome sotto area');
+      subName.addEventListener('change', () => {
+        const v = subName.value.trim();
+        if (v) { sub.name = v; save(); }
+        renderAreas();
+      });
+
+      const budget = el('input', { type: 'number', step: '0.01', min: '0', inputMode: 'decimal', value: sub.budget.toFixed(2) });
+      budget.setAttribute('aria-label', `Budget mensile ${sub.name}`);
+      budget.addEventListener('change', () => {
+        sub.budget = parseBudget(budget.value);
+        save();
+        renderAreas();
+      });
+
+      const subDel = el('button', { type: 'button', className: 'link', textContent: 'Elimina' });
+      subDel.setAttribute('aria-label', `Elimina ${sub.name}`);
+      subDel.addEventListener('click', () => {
+        if (!confirm(`Eliminare la sotto area "${sub.name}"?`)) return;
+        m.subs = m.subs.filter((x) => x.id !== sub.id);
+        save();
+        renderAreas();
+      });
+
+      return el('li', {}, subName, el('label', { className: 'budget' }, budget), subDel);
+    });
+
+    const newName = el('input', { type: 'text', placeholder: 'Nuova sotto area (es. Mutuo)', maxLength: 40, required: true });
+    newName.setAttribute('aria-label', 'Nome nuova sotto area');
+    const newBudget = el('input', { type: 'number', step: '0.01', min: '0', inputMode: 'decimal', placeholder: 'Budget €' });
+    newBudget.setAttribute('aria-label', 'Budget mensile nuova sotto area');
+    const form = el('form', { className: 'sub-form' }, newName, newBudget, el('button', { type: 'submit', textContent: 'Aggiungi' }));
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const v = newName.value.trim();
+      if (!v) return;
+      m.subs.push({ id: crypto.randomUUID(), name: v, budget: parseBudget(newBudget.value || 0) });
+      save();
+      renderAreas();
+      // Rimette il cursore nel campo della stessa macro area per inserimenti in serie.
+      document.querySelector(`[data-macro="${m.id}"] .sub-form input`)?.focus();
+    });
+
+    const card = el('div', { className: 'card' }, head,
+      subs.length ? el('ul', { className: 'sub-list' }, ...subs) : el('p', { className: 'hint', textContent: 'Nessuna sotto area.' }),
+      form);
+    card.dataset.macro = m.id;
+    return card;
+  });
+  $('macro-list').replaceChildren(...cards);
+}
+
+$('macro-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const v = $('macro-name').value.trim();
+  if (!v) return;
+  const m = { id: crypto.randomUUID(), name: v, subs: [] };
+  data.areas.push(m);
+  save();
+  $('macro-name').value = '';
+  renderAreas();
+  document.querySelector(`[data-macro="${m.id}"] .sub-form input`)?.focus();
+});
+
+function mergeAreas(list) {
+  for (const m of list) {
+    if (!m || !m.id || typeof m.name !== 'string' || !Array.isArray(m.subs)) continue;
+    let target = data.areas.find((x) => x.id === m.id);
+    if (!target) {
+      target = { id: String(m.id), name: m.name, subs: [] };
+      data.areas.push(target);
+    }
+    const ids = new Set(target.subs.map((x) => x.id));
+    for (const sub of m.subs) {
+      if (sub && sub.id && !ids.has(sub.id) && typeof sub.name === 'string') {
+        target.subs.push({ id: String(sub.id), name: sub.name, budget: parseBudget(sub.budget ?? 0) });
+        ids.add(sub.id);
+      }
+    }
+  }
+  save();
+}
+
+// ---------- Navigazione ----------
+
+function showPage() {
+  const page = location.hash === '#aree' ? 'aree' : 'spese';
+  for (const p of document.querySelectorAll('.page')) p.hidden = p.id !== `page-${page}`;
+  for (const t of document.querySelectorAll('.tab')) t.classList.toggle('active', t.dataset.page === page);
+  if (page === 'aree') renderAreas(); else render();
+}
+
+window.addEventListener('hashchange', showPage);
+
 // ---------- Backup ----------
 
 $('export').addEventListener('click', () => {
@@ -203,8 +344,10 @@ $('import').addEventListener('change', async (e) => {
     parsed = null;
   }
   let list;
+  let areas = [];
   if (parsed && Array.isArray(parsed.expenses)) {
     list = parsed.expenses;
+    if (Array.isArray(parsed.areas)) areas = parsed.areas;
   } else if (isLegacyVault(parsed)) {
     // Backup creato con la vecchia versione protetta da password.
     const password = prompt('Questo backup è protetto da password. Inseriscila per importarlo:');
@@ -221,7 +364,8 @@ $('import').addEventListener('change', async (e) => {
   }
   const before = data.expenses.length;
   mergeExpenses(list);
-  render();
+  mergeAreas(areas);
+  showPage();
   alert(`Importate ${data.expenses.length - before} spese.`);
 });
 
@@ -236,5 +380,5 @@ if (readLegacyVault()) {
   $('app').hidden = true;
   $('migrate').hidden = false;
 } else {
-  render();
+  showPage();
 }

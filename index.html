@@ -30,14 +30,20 @@
     </section>
 
     <section id="app">
-      <div class="toolbar">
-        <label>Mese
-          <input type="month" id="month">
-        </label>
+      <nav class="toolbar">
+        <a href="#spese" class="tab" data-page="spese">Spese</a>
+        <a href="#aree" class="tab" data-page="aree">Aree</a>
         <span class="spacer"></span>
         <button type="button" id="export">Esporta backup</button>
         <label class="button">Importa backup
           <input type="file" id="import" accept=".json,application/json" hidden>
+        </label>
+      </nav>
+
+      <div id="page-spese" class="page">
+      <div class="toolbar">
+        <label>Mese
+          <input type="month" id="month">
         </label>
       </div>
 
@@ -71,6 +77,23 @@
           <tbody id="rows"></tbody>
         </table>
         <p id="empty" class="hint">Nessuna spesa in questo mese.</p>
+      </div>
+      </div>
+
+      <div id="page-aree" class="page" hidden>
+        <form id="macro-form" class="card inline-form">
+          <label>Nuova macro area
+            <input type="text" id="macro-name" required maxlength="40" placeholder="Es. Casa">
+          </label>
+          <button type="submit">Aggiungi macro area</button>
+        </form>
+
+        <div class="card summary">
+          <h2>Budget mensile totale: <span id="budget-total">0,00 €</span></h2>
+        </div>
+
+        <div id="macro-list"></div>
+        <p id="macro-empty" class="hint">Nessuna macro area. Creane una qui sopra, ad esempio "Casa".</p>
       </div>
     </section>
   </main>

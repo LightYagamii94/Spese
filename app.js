@@ -19,14 +19,16 @@ function load() {
     if (parsed && Array.isArray(parsed.expenses)) {
       if (!Array.isArray(parsed.areas)) parsed.areas = [];
       if (!Array.isArray(parsed.accounts)) parsed.accounts = [];
+      if (typeof parsed.partner !== 'string' || !parsed.partner) parsed.partner = 'Laura';
       return parsed;
     }
   } catch {}
-  return { expenses: [], areas: [], accounts: [] };
+  return { expenses: [], areas: [], accounts: [], partner: 'Laura' };
 }
 
 function save() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  updateDebtBadge();
 }
 
 // ---------- Vecchi dati cifrati (versione con password) ----------
@@ -87,6 +89,20 @@ $('migrate-skip').addEventListener('click', () => {
 
 // ---------- Spese ----------
 
+// Dati di divisione di una spesa importata, controllati.
+function cleanSplit(sp, amount) {
+  if (!sp || typeof sp.mine !== 'number' || !['me', 'both', 'partner'].includes(sp.paidBy)) return null;
+  if (sp.mine < 0 || sp.mine > amount) return null;
+  return {
+    mode: sp.mode === 'manual' ? 'manual' : 'half',
+    mine: sp.mine,
+    paidBy: sp.paidBy,
+    settled: Boolean(sp.settled),
+    ...(sp.settled && sp.settleAccountId ? { settleAccountId: String(sp.settleAccountId) } : {}),
+    ...(sp.settled && sp.settledAt ? { settledAt: String(sp.settledAt) } : {}),
+  };
+}
+
 function mergeExpenses(list) {
   const ids = new Set(data.expenses.map((x) => x.id));
   for (const x of list) {
@@ -99,6 +115,7 @@ function mergeExpenses(list) {
         ...(x.subId ? { subId: String(x.subId) } : {}),
         ...(x.accountId ? { accountId: String(x.accountId) } : {}),
         ...(x.category ? { category: String(x.category) } : {}),
+        ...(cleanSplit(x.split, x.amount) ? { split: cleanSplit(x.split, x.amount) } : {}),
         amount: x.amount,
       });
       ids.add(x.id);
@@ -164,7 +181,46 @@ const findAccount = (id) => data.accounts.find((a) => a.id === id);
 
 // Il saldo salvato di un conto è il "saldo di partenza": quello mostrato è
 // il saldo di partenza meno tutte le spese pagate con quel conto.
-const spentFromAccount = (a) => data.expenses.reduce((s, x) => (x.accountId === a.id ? s + x.amount : s), 0);
+// ---------- Spese divise con il/la partner ----------
+
+const round2 = (n) => Math.round(n * 100) / 100;
+const partnerName = () => data.partner || 'Laura';
+// Quota a carico mio: conta nel budget e nelle statistiche.
+const myShare = (x) => (x.split ? x.split.mine : x.amount);
+const partnerShare = (x) => (x.split ? round2(x.amount - x.split.mine) : 0);
+
+// Debito generato da una spesa divisa: "owed" = il/la partner mi deve,
+// "owe" = devo io al/la partner. null se nessuno deve niente.
+function debtOf(x) {
+  if (!x.split) return null;
+  if (x.split.paidBy === 'me' && partnerShare(x) > 0) return { dir: 'owed', amount: partnerShare(x) };
+  if (x.split.paidBy === 'partner' && x.split.mine > 0) return { dir: 'owe', amount: x.split.mine };
+  return null;
+}
+
+// Effetto di una spesa sul saldo di un conto (negativo = soldi usciti).
+function accountFlow(x, accountId) {
+  let flow = 0;
+  if (x.accountId === accountId) {
+    const paid = !x.split ? x.amount : x.split.paidBy === 'me' ? x.amount : x.split.paidBy === 'both' ? x.split.mine : 0;
+    flow -= paid;
+  }
+  const debt = debtOf(x);
+  if (debt && x.split.settled && x.split.settleAccountId === accountId) flow += debt.dir === 'owed' ? debt.amount : -debt.amount;
+  return flow;
+}
+
+const openDebts = () => data.expenses.filter((x) => debtOf(x) && !x.split.settled);
+
+function updateDebtBadge() {
+  const badge = document.getElementById('debt-badge');
+  if (!badge) return;
+  const n = openDebts().length;
+  badge.hidden = n === 0;
+  badge.textContent = n > 9 ? '9+' : String(n);
+}
+
+const spentFromAccount = (a) => -data.expenses.reduce((s, x) => s + accountFlow(x, a.id), 0);
 const currentBalance = (a) => Math.round((a.balance - spentFromAccount(a)) * 100) / 100;
 
 // Ultima area e ultimo conto usati: proposti di nuovo alla spesa successiva.
@@ -226,6 +282,25 @@ function budgetRow(label, spent, budget, extra) {
     el('span', { className: 'detail', textContent: detail }));
 }
 
+// Importo nell'elenco: per le spese divise la mia quota, con il totale sotto.
+function amountCell(x) {
+  const cell = el('span', { className: 'expense-amount', textContent: euro.format(myShare(x)) });
+  if (x.split) cell.append(el('small', { textContent: `di ${euro.format(x.amount)}` }));
+  return cell;
+}
+
+function splitChips(x) {
+  if (!x.split) return [];
+  const chips = [el('span', { className: 'chip', textContent: `👥 con ${partnerName()}` })];
+  const debt = debtOf(x);
+  if (debt) {
+    const text = x.split.settled ? 'saldato ✓'
+      : debt.dir === 'owed' ? `${partnerName()} ti deve ${euro.format(debt.amount)}` : `devi ${euro.format(debt.amount)} a ${partnerName()}`;
+    chips.push(el('span', { className: `chip ${x.split.settled ? 'ok' : 'debt'}`, textContent: text }));
+  }
+  return chips;
+}
+
 // Nome da mostrare per una spesa: la descrizione, oppure (se vuota) la sotto area.
 function expenseTitle(x) {
   if (x.description) return x.description;
@@ -248,13 +323,16 @@ function render() {
     if (found) tags.push(el('span', { className: 'chip', textContent: `${found.macro.name} › ${found.sub.name}` }));
     else if (x.category) tags.push(el('span', { className: 'chip muted', textContent: x.category }));
     else tags.push(el('span', { className: 'chip muted', textContent: x.subId ? 'Area eliminata' : 'Senza area' }));
-    if (account) tags.push(el('span', { className: 'chip', textContent: `${account.emoji} ${account.name}` }));
+    if (account && !(x.split && x.split.paidBy === 'partner')) tags.push(el('span', { className: 'chip', textContent: `${account.emoji} ${account.name}` }));
+    tags.push(...splitChips(x));
 
     const title = expenseTitle(x);
     const del = iconButton('trash', `Elimina ${title}`, 'danger');
     del.addEventListener('click', () => {
-      const back = account ? `\n${euro.format(x.amount)} torneranno sul conto "${account.name}".` : '';
-      if (!confirm(`Eliminare "${title}"?${back}`)) return;
+      const back = account && accountFlow(x, account.id) < 0 ? `\n${euro.format(-accountFlow(x, account.id))} torneranno sul conto "${account.name}".` : '';
+      const debt = debtOf(x);
+      const debtNote = debt && !x.split.settled ? '\nVerrà eliminato anche il debito collegato.' : '';
+      if (!confirm(`Eliminare "${title}"?${back}${debtNote}`)) return;
       data.expenses = data.expenses.filter((y) => y.id !== x.id);
       save();
       render();
@@ -264,13 +342,13 @@ function render() {
       el('div', { className: 'expense-main' },
         el('div', { className: 'desc', textContent: title }),
         el('div', { className: 'tags' }, ...tags)),
-      el('span', { className: 'expense-amount', textContent: euro.format(x.amount) }),
+      amountCell(x),
       del);
   });
   $('rows').replaceChildren(...rows);
   $('empty').hidden = items.length > 0;
 
-  const total = items.reduce((s, x) => s + x.amount, 0);
+  const total = round2(items.reduce((s, x) => s + myShare(x), 0));
   $('total').textContent = euro.format(total);
 
   const totalBudget = data.areas.reduce((s, m) => s + macroBudget(m), 0);
@@ -299,7 +377,7 @@ function renderStats() {
   yearSel.replaceChildren(...years.map((y) => el('option', { value: y, textContent: y })));
   yearSel.value = years.includes(prevYear) ? prevYear : years[0];
 
-  for (const b of document.querySelectorAll('.segmented button')) b.setAttribute('aria-pressed', String(b.dataset.period === stats.period));
+  for (const b of document.querySelectorAll('#page-statistiche .segmented button')) b.setAttribute('aria-pressed', String(b.dataset.period === stats.period));
   $('stats-month').closest('.stepper').hidden = stats.period !== 'month';
   yearSel.closest('.stepper').hidden = stats.period !== 'year';
   updateSteppers();
@@ -334,9 +412,10 @@ function renderStats() {
   let spentTotal = 0;
   for (const x of data.expenses) {
     if (!inPeriod(x)) continue;
-    spentTotal += x.amount;
-    if (x.subId && findSub(x.subId)) spentBySub[x.subId] = (spentBySub[x.subId] || 0) + x.amount;
-    else unassigned += x.amount;
+    const mine = myShare(x);
+    spentTotal += mine;
+    if (x.subId && findSub(x.subId)) spentBySub[x.subId] = (spentBySub[x.subId] || 0) + mine;
+    else unassigned += mine;
   }
   const budgetTotal = data.areas.reduce((s, m) => s + macroBudget(m), 0) * months;
   const remaining = budgetTotal - spentTotal;
@@ -362,7 +441,7 @@ function renderStats() {
   $('stats-empty').hidden = blocks.length > 0;
 }
 
-for (const b of document.querySelectorAll('.segmented button')) {
+for (const b of document.querySelectorAll('#page-statistiche .segmented button')) {
   b.addEventListener('click', () => {
     stats.period = b.dataset.period;
     renderStats();
@@ -377,13 +456,25 @@ $('expense-form').addEventListener('submit', (e) => {
   const subId = $('expense-area').value;
   if (!(amount > 0) || !findSub(subId)) return;
   // La descrizione è facoltativa: se vuota, nell'elenco si vede il nome della sotto area.
-  const accountId = $('expense-account').value;
+  let split = null;
+  if ($('split-on').checked) {
+    const mine = splitMine(amount);
+    if (mine === null) {
+      updateSplitSummary();
+      $('split-mine').focus();
+      return;
+    }
+    split = { mode: splitState.mode, mine, paidBy: splitState.paid, settled: false };
+  }
+  // Se ha pagato tutto il/la partner, dai miei conti non esce nulla (per ora).
+  const accountId = split && split.paidBy === 'partner' ? '' : $('expense-account').value;
   data.expenses.push({
     id: crypto.randomUUID(),
     date: $('date').value,
     description: $('description').value.trim(),
     subId,
     ...(findAccount(accountId) ? { accountId } : {}),
+    ...(split ? { split } : {}),
     amount,
   });
   save();
@@ -400,9 +491,70 @@ $('expense-form').addEventListener('submit', (e) => {
   }
   $('description').value = '';
   $('amount').value = '';
+  $('split-mine').value = '';
+  $('split-on').checked = false;
+  updateSplitUI();
   $('description').focus();
   render();
 });
+
+// ---------- Modulo: divisione della spesa ----------
+
+const splitState = { mode: 'half', paid: 'me' };
+
+// Mia quota in base alla scelta; null se l'importo manuale non è valido.
+function splitMine(amount) {
+  if (splitState.mode === 'half') return round2(amount / 2);
+  const v = $('split-mine').value;
+  if (v === '') return null;
+  const mine = round2(parseFloat(v));
+  return Number.isFinite(mine) && mine >= 0 && mine <= amount ? mine : null;
+}
+
+function updateSplitSummary() {
+  const out = $('split-summary');
+  const amount = round2(parseFloat($('amount').value));
+  if (!(amount > 0)) {
+    out.replaceChildren('Inserisci l\'importo per vedere la divisione.');
+    return;
+  }
+  const mine = splitMine(amount);
+  if (mine === null) {
+    out.replaceChildren(el('span', { className: 'error', textContent: `La tua parte deve essere tra 0 e ${euro.format(amount)}.` }));
+    return;
+  }
+  const other = round2(amount - mine);
+  const name = partnerName();
+  let debt = 'nessun debito';
+  if (splitState.paid === 'me' && other > 0) debt = `${name} ti deve ${euro.format(other)}`;
+  if (splitState.paid === 'partner' && mine > 0) debt = `devi ${euro.format(mine)} a ${name}`;
+  out.replaceChildren(`Tu ${euro.format(mine)} · ${name} ${euro.format(other)} → `, el('span', { className: 'debt', textContent: debt }));
+}
+
+function updateSplitUI() {
+  const on = $('split-on').checked;
+  $('split-box').hidden = !on;
+  $('split-mine-field').hidden = splitState.mode !== 'manual';
+  $('split-mine').required = on && splitState.mode === 'manual';
+  for (const b of document.querySelectorAll('.choice button')) {
+    const group = b.parentElement.dataset.group;
+    b.setAttribute('aria-pressed', String(b.dataset.value === splitState[group]));
+  }
+  // Se paga tutto il/la partner il conto non serve.
+  document.querySelector('.f-acct').hidden = on && splitState.paid === 'partner';
+  if (on) updateSplitSummary();
+}
+
+for (const b of document.querySelectorAll('.choice button')) {
+  b.addEventListener('click', () => {
+    splitState[b.parentElement.dataset.group] = b.dataset.value;
+    updateSplitUI();
+    if (b.dataset.value === 'manual') $('split-mine').focus();
+  });
+}
+$('split-on').addEventListener('change', updateSplitUI);
+$('amount').addEventListener('input', () => { if ($('split-on').checked) updateSplitSummary(); });
+$('split-mine').addEventListener('input', updateSplitSummary);
 
 $('month').addEventListener('change', render);
 
@@ -845,6 +997,157 @@ function mergeAccounts(list) {
   save();
 }
 
+// ---------- Debiti ----------
+
+function applyPartnerName() {
+  for (const n of document.querySelectorAll('.partner-name')) n.textContent = partnerName();
+  if (document.activeElement !== $('partner-input')) $('partner-input').value = partnerName();
+}
+
+$('partner-input').addEventListener('change', () => {
+  const v = $('partner-input').value.trim();
+  if (v) {
+    data.partner = v;
+    save();
+  }
+  applyPartnerName();
+  renderDebts();
+});
+
+function accountOptions(selected) {
+  const sel = $('settle-account');
+  sel.replaceChildren(
+    el('option', { value: '', textContent: 'Nessun conto (non tracciato)' }),
+    ...data.accounts.map((a) => el('option', { value: a.id, textContent: `${a.emoji} ${a.name}` })));
+  sel.value = findAccount(selected) ? selected : '';
+}
+
+// Finestra di conferma: niente viene modificato finché non si preme "Conferma".
+let settleAction = null;
+function openSettleDialog({ title, text, accountLabel, account, onConfirm }) {
+  $('settle-title').textContent = title;
+  $('settle-text').replaceChildren(...text);
+  $('settle-account-label').textContent = accountLabel;
+  accountOptions(account);
+  settleAction = onConfirm;
+  $('settle-dialog').showModal();
+}
+$('settle-cancel').addEventListener('click', () => {
+  settleAction = null;
+  $('settle-dialog').close();
+});
+$('settle-dialog').addEventListener('close', () => { settleAction = null; });
+$('settle-form').addEventListener('submit', () => {
+  const action = settleAction;
+  const accountId = $('settle-account').value;
+  settleAction = null;
+  if (action) action(accountId);
+});
+
+function markSettled(list, accountId) {
+  const when = new Date().toISOString().slice(0, 10);
+  for (const x of list) {
+    x.split.settled = true;
+    x.split.settledAt = when;
+    if (findAccount(accountId)) x.split.settleAccountId = accountId;
+    else delete x.split.settleAccountId;
+  }
+  save();
+  renderDebts();
+}
+
+function debtItem(x, settled) {
+  const debt = debtOf(x);
+  const [, mo, d] = x.date.split('-');
+  const found = x.subId ? findSub(x.subId) : null;
+  const tags = [];
+  if (found) tags.push(el('span', { className: 'chip', textContent: `${found.macro.name} › ${found.sub.name}` }));
+  tags.push(el('span', { className: 'chip', textContent: `totale ${euro.format(x.amount)}` }));
+  let action;
+  if (settled) {
+    const acc = x.split.settleAccountId ? findAccount(x.split.settleAccountId) : null;
+    const [sy, sm, sd] = (x.split.settledAt || '').split('-');
+    tags.push(el('span', { className: 'chip ok', textContent: `saldato${sd ? ` il ${sd}/${sm}/${sy}` : ''}${acc ? ` · ${acc.emoji} ${acc.name}` : ''}` }));
+    action = el('button', { type: 'button', className: 'btn ghost', textContent: 'Annulla' });
+    action.title = 'Segna di nuovo come da saldare';
+    action.addEventListener('click', () => {
+      if (!confirm(`Segnare di nuovo "${expenseTitle(x)}" come da saldare?${acc ? `\nIl movimento sul conto "${acc.name}" verrà annullato.` : ''}`)) return;
+      x.split.settled = false;
+      delete x.split.settleAccountId;
+      delete x.split.settledAt;
+      save();
+      renderDebts();
+    });
+  } else {
+    action = el('button', { type: 'button', className: 'btn primary', textContent: 'Saldato' });
+    action.addEventListener('click', () => {
+      const name = partnerName();
+      const owed = debt.dir === 'owed';
+      openSettleDialog({
+        title: owed ? `${name} ti ha restituito i soldi?` : `Hai restituito i soldi a ${name}?`,
+        text: [owed ? `${name} ti restituisce ` : `Restituisci a ${name} `, el('b', { textContent: euro.format(debt.amount) }), ` per "${expenseTitle(x)}".`],
+        accountLabel: owed ? 'Su quale conto sono arrivati?' : 'Da quale conto sono usciti?',
+        account: x.accountId || readLast().accountId,
+        onConfirm: (accountId) => markSettled([x], accountId),
+      });
+    });
+  }
+  return el('li', {},
+    el('span', { className: 'date-badge' }, el('b', { textContent: d }), el('small', { textContent: MONTHS[Number(mo) - 1] })),
+    el('div', { className: 'expense-main' }, el('div', { className: 'desc', textContent: expenseTitle(x) }), el('div', { className: 'tags' }, ...tags)),
+    el('div', { className: 'debt-side' }, el('span', { className: 'expense-amount', textContent: euro.format(debt.amount) }), action));
+}
+
+function renderDebts() {
+  applyPartnerName();
+  const name = partnerName();
+  const byDate = (a, b) => b.date.localeCompare(a.date);
+  const open = openDebts().sort(byDate);
+  const owed = open.filter((x) => debtOf(x).dir === 'owed');
+  const owe = open.filter((x) => debtOf(x).dir === 'owe');
+  const settled = data.expenses.filter((x) => debtOf(x) && x.split.settled)
+    .sort((a, b) => (b.split.settledAt || '').localeCompare(a.split.settledAt || '') || byDate(a, b));
+
+  const owedTotal = round2(owed.reduce((s, x) => s + debtOf(x).amount, 0));
+  const oweTotal = round2(owe.reduce((s, x) => s + debtOf(x).amount, 0));
+  const net = round2(owedTotal - oweTotal);
+  $('debt-label').textContent = net > 0 ? `${name} ti deve` : net < 0 ? `Devi a ${name}` : 'Siete in pari';
+  $('debt-net').textContent = euro.format(Math.abs(net));
+  $('debt-sub').textContent = owed.length && owe.length
+    ? `${name} ti deve ${euro.format(owedTotal)} · tu le devi ${euro.format(oweTotal)}`
+    : open.length ? `${open.length} ${open.length === 1 ? 'spesa da saldare' : 'spese da saldare'}` : 'Nessun debito da saldare';
+  $('settle-all').disabled = open.length === 0;
+
+  $('owed-list').replaceChildren(...owed.map((x) => debtItem(x, false)));
+  $('owed-empty').hidden = owed.length > 0;
+  $('owe-list').replaceChildren(...owe.map((x) => debtItem(x, false)));
+  $('owe-empty').hidden = owe.length > 0;
+  $('settled-list').replaceChildren(...settled.map((x) => debtItem(x, true)));
+  $('settled-count').textContent = String(settled.length);
+  $('settled-list').closest('details').hidden = settled.length === 0;
+}
+
+$('settle-all').addEventListener('click', () => {
+  const open = openDebts();
+  if (!open.length) return;
+  const name = partnerName();
+  const owedTotal = round2(open.filter((x) => debtOf(x).dir === 'owed').reduce((s, x) => s + debtOf(x).amount, 0));
+  const oweTotal = round2(open.filter((x) => debtOf(x).dir === 'owe').reduce((s, x) => s + debtOf(x).amount, 0));
+  const net = round2(owedTotal - oweTotal);
+  const details = [];
+  if (owedTotal) details.push(el('li', { textContent: `${name} ti deve ${euro.format(owedTotal)}` }));
+  if (oweTotal) details.push(el('li', { textContent: `Tu devi ${euro.format(oweTotal)} a ${name}` }));
+  const outcome = net > 0 ? [`${name} ti dà `, el('b', { textContent: euro.format(net) })]
+    : net < 0 ? ['Tu dai ', el('b', { textContent: euro.format(-net) }), ` a ${name}`] : ['Vi compensate: nessuno deve dare soldi.'];
+  openSettleDialog({
+    title: `Saldare tutti i ${open.length} debiti?`,
+    text: [...outcome, el('ul', {}, ...details)],
+    accountLabel: net >= 0 ? 'Su quale conto arrivano i soldi?' : 'Da quale conto escono i soldi?',
+    account: readLast().accountId,
+    onConfirm: (accountId) => markSettled(open, accountId),
+  });
+});
+
 // ---------- Frecce per cambiare mese / anno ----------
 
 function shiftMonth(ym, delta) {
@@ -890,9 +1193,14 @@ for (const t of nav.children) {
 
 try {
   const order = JSON.parse(localStorage.getItem(NAV_ORDER_KEY)) || [];
-  for (const id of order) {
-    const t = nav.querySelector(`[data-id="${id}"]`);
-    if (t) nav.append(t);
+  if (order.length) {
+    // Prima i pulsanti nell'ordine salvato, poi quelli aggiunti dopo (es. nuove pagine).
+    const tabs = [...nav.children];
+    for (const id of order) {
+      const t = tabs.find((x) => x.dataset.id === id);
+      if (t) nav.append(t);
+    }
+    for (const t of tabs) if (!order.includes(t.dataset.id)) nav.append(t);
   }
 } catch {}
 
@@ -948,7 +1256,7 @@ for (const tab of nav.children) {
 
 // ---------- Navigazione ----------
 
-const PAGES = { spese: render, statistiche: renderStats, aree: renderAreas, conti: renderAccounts };
+const PAGES = { spese: render, statistiche: renderStats, debiti: renderDebts, aree: renderAreas, conti: renderAccounts };
 
 function showPage() {
   const requested = location.hash.slice(1);
@@ -1006,6 +1314,8 @@ $('import').addEventListener('change', async (e) => {
   mergeExpenses(list);
   mergeAreas(areas);
   mergeAccounts(accounts);
+  if (typeof parsed?.partner === 'string' && parsed.partner) data.partner = parsed.partner;
+  save();
   showPage();
   alert(`Importate ${data.expenses.length - before} spese.`);
 });
@@ -1017,6 +1327,9 @@ const iso = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOS
 $('date').value = iso.slice(0, 10);
 $('month').value = iso.slice(0, 7);
 $('month').dataset.today = iso.slice(0, 7);
+applyPartnerName();
+updateSplitUI();
+updateDebtBadge();
 
 if (readLegacyVault()) {
   $('app').hidden = true;

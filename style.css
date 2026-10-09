@@ -393,7 +393,9 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
   grid-template-areas:
     "title title title title"
     "desc desc area area"
-    "date amount acct btn"
+    "date amount acct acct"
+    "split split split split"
+    "btn btn btn btn"
     "note note note note";
   gap: 12px;
   align-items: end;
@@ -406,6 +408,115 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
 .f-amount { grid-area: amount; }
 .f-btn { grid-area: btn; }
 .form-grid .notice { grid-area: note; }
+.f-split { grid-area: split; display: grid; gap: 12px; }
+
+/* Interruttore "Da dividere" */
+.switch { display: flex; align-items: center; gap: 12px; cursor: pointer; font-weight: 600; width: fit-content; -webkit-tap-highlight-color: transparent; }
+.switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.switch-ui {
+  position: relative;
+  width: 46px; height: 28px;
+  flex: none;
+  border-radius: 99px;
+  background: var(--border);
+  transition: background 0.2s;
+}
+.switch-ui::after {
+  content: "";
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s;
+}
+.switch input:checked + .switch-ui { background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+.switch input:checked + .switch-ui::after { transform: translateX(18px); }
+.switch input:focus-visible + .switch-ui { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); }
+
+.split-box {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.split-row { display: grid; gap: 6px; }
+.split-label { font-size: 0.8rem; font-weight: 600; color: var(--muted); }
+.choice {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.choice button {
+  flex: 1;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  min-height: 36px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.choice button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.split-summary { margin: 0; font-size: 0.9rem; font-weight: 600; }
+.split-summary .debt { color: var(--accent); }
+.split-summary .error { color: var(--danger); }
+
+/* Pagina debiti */
+.hero-btn {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+.hero-btn:hover { background: rgba(255, 255, 255, 0.28); }
+.hero-btn:disabled { opacity: 0.45; cursor: default; }
+.debt-list li { grid-template-columns: auto 1fr auto; }
+.debt-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.debt-list .btn { min-height: 34px; padding: 0 12px; font-size: 0.85rem; }
+.debt-list .expense-amount small { display: block; font-size: 0.72rem; font-weight: 500; color: var(--muted); text-align: right; }
+.settled-card summary { cursor: pointer; list-style: none; }
+.settled-card summary::-webkit-details-marker { display: none; }
+.settled-card summary h2 { margin: 0; display: inline; }
+.settled-card summary::after { content: " ▾"; color: var(--muted); }
+.settled-card[open] summary { margin-bottom: 14px; }
+.settled-card .expense-main .desc { color: var(--muted); }
+.chip.debt { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.chip.ok { background: color-mix(in srgb, #22c55e 15%, transparent); color: #15803d; border-color: transparent; }
+@media (prefers-color-scheme: dark) { .chip.ok { color: #4ade80; } }
+.expense-amount small { display: block; font-size: 0.72rem; font-weight: 500; color: var(--muted); text-align: right; }
+
+.settle-text { margin: 0 0 14px; color: var(--muted); }
+.settle-text b { color: var(--text); }
+.settle-text ul { margin: 8px 0 0; padding-left: 18px; }
+.sheet-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+.sheet-actions .btn { flex: 1; }
+
+/* Numero di debiti aperti sul pulsante della barra */
+.tab { position: relative; }
+.tab-badge {
+  position: absolute;
+  top: 3px;
+  left: calc(50% + 6px);
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 99px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
 
 .notice {
   margin: 0;
@@ -632,7 +743,7 @@ input.rename:focus { background: var(--surface); }
 .account-list .money input { font-size: 1.15rem; font-weight: 700; text-align: left; padding-left: 12px; }
 .account-list .money.negative input { color: var(--danger); }
 
-.emoji-dialog {
+.emoji-dialog, .sheet {
   width: min(440px, calc(100vw - 32px));
   max-height: calc(100vh - 48px);
   padding: 18px;
@@ -642,7 +753,7 @@ input.rename:focus { background: var(--surface); }
   color: var(--text);
   box-shadow: var(--shadow-lift);
 }
-.emoji-dialog::backdrop { background: rgba(10, 12, 25, 0.45); backdrop-filter: blur(3px); }
+.emoji-dialog::backdrop, .sheet::backdrop { background: rgba(10, 12, 25, 0.45); backdrop-filter: blur(3px); }
 .emoji-dialog-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .emoji-dialog-head h2 { margin: 0; }
 .emoji-grid {
@@ -671,7 +782,7 @@ input.rename:focus { background: var(--surface); }
 @media (max-width: 720px) {
   .form-grid {
     grid-template-columns: 1fr 1fr;
-    grid-template-areas: "title title" "desc desc" "area area" "acct acct" "date amount" "btn btn" "note note";
+    grid-template-areas: "title title" "desc desc" "area area" "date amount" "acct acct" "split split" "btn btn" "note note";
   }
 }
 

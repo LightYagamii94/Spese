@@ -1947,23 +1947,34 @@ function downloadBackup() {
 }
 
 // Condivisione (es. Google Drive) quando il telefono la supporta.
+// Chrome su Android condivide solo alcuni tipi di file e i .json non sono tra
+// questi: per la condivisione il backup diventa un file di testo (.txt) con lo
+// stesso contenuto, che "Importa" accetta come il .json.
+function shareableBackup() {
+  const { json, name } = backupFile();
+  return new File([json], name.replace(/\.json$/, '.txt'), { type: 'text/plain' });
+}
+
 function canShareBackup() {
   try {
-    const { json, name } = backupFile();
-    return Boolean(navigator.canShare && navigator.canShare({ files: [new File([json], name, { type: 'application/json' })] }));
+    return Boolean(navigator.share && navigator.canShare && navigator.canShare({ files: [shareableBackup()] }));
   } catch {
     return false;
   }
 }
 
 async function shareBackup() {
-  const { json, name } = backupFile();
+  const file = shareableBackup();
   try {
-    await navigator.share({ files: [new File([json], name, { type: 'application/json' })], title: name });
+    await navigator.share({ files: [file], title: file.name });
     markBackupDone();
     return true;
-  } catch {
-    return false; // annullato dall'utente: si può riprovare
+  } catch (err) {
+    if (err?.name === 'AbortError') return false; // condivisione annullata: si può riprovare
+    // Condivisione rifiutata dal telefono: si scarica il file, così il backup c'è comunque.
+    downloadBackup();
+    showToast('Condivisione non disponibile: backup scaricato nella cartella Download', '', () => {});
+    return true;
   }
 }
 
@@ -2002,9 +2013,10 @@ $('backup-download').addEventListener('click', () => {
   showToast('Backup scaricato nella cartella Download', '', () => {});
 });
 $('backup-share').addEventListener('click', async () => {
+  const toastBefore = $('toast').textContent;
   if (await shareBackup()) {
     $('backup-dialog').close();
-    showToast('Backup salvato', '', () => {});
+    if ($('toast').hidden || $('toast').textContent === toastBefore) showToast('Backup salvato', '', () => {});
   }
 });
 $('backup-later').addEventListener('click', () => {
@@ -2120,7 +2132,7 @@ updateDebtBadge();
 
 // ---------- Versione e aggiornamenti ----------
 // Da aumentare insieme a version.json e ai ?v= di index.html a ogni modifica.
-const APP_VERSION = 23;
+const APP_VERSION = 24;
 $('app-version').textContent = `Versione ${APP_VERSION}`;
 
 // L'app installata può restare aperta in memoria per giorni: quando torna in

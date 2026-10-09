@@ -41,7 +41,7 @@ I dati vivono in un solo browser. Usa **Esporta backup** per scaricare un file d
 
 Se cancelli i dati di navigazione del browser, le spese vengono eliminate: fai backup regolari.
 
-- **Backup di fine mese:** l'ultimo giorno del mese (o alla prima apertura successiva, se è stato saltato) l'app propone il backup con una finestra: "Scarica sul telefono" oppure "Salva su Drive o altre app" (menu di condivisione del telefono). Un'app web non può salvare file da sola, quindi serve sempre un tocco; "Più tardi" lo ripropone il giorno dopo.
+- **Backup di fine mese:** l'ultimo giorno del mese (o alla prima apertura successiva, se è stato saltato) l'app propone il backup con una finestra: "Scarica sul telefono" oppure "Salva su Drive o altre app" (menu di condivisione del telefono; il file condiviso è un `.txt` perché Chrome su Android non condivide i `.json`, e "Importa" accetta entrambi). Un'app web non può salvare file da sola, quindi serve sempre un tocco; "Più tardi" lo ripropone il giorno dopo.
 - **Stato in Conti:** in fondo alla pagina Conti si vede la data dell'ultimo backup e se il browser ha concesso l'archiviazione persistente (i dati non vengono cancellati automaticamente per liberare spazio); l'app la richiede all'avvio.
 
 I backup creati con la vecchia versione protetta da password si possono ancora importare: l'app chiederà quella password una sola volta.

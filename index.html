@@ -22,7 +22,7 @@
   <meta name="color-scheme" content="light dark">
   <!-- Il numero di versione (?v=) va aumentato a ogni modifica di style.css o app.js:
        costringe il browser a scaricare i file nuovi invece di usare quelli in cache. -->
-  <link rel="stylesheet" href="style.css?v=25">
+  <link rel="stylesheet" href="style.css?v=26">
 </head>
 <body>
   <header class="appbar">
@@ -305,7 +305,10 @@
             <p class="hero-value" id="debt-net">0,00 €</p>
             <p class="hero-sub" id="debt-sub"></p>
           </div>
-          <button type="button" id="settle-all" class="btn hero-btn">Salda tutto</button>
+          <div class="hero-actions">
+            <button type="button" id="pay-open" class="btn hero-btn">Registra pagamento</button>
+            <button type="button" id="settle-all" class="btn hero-btn">Salda tutto</button>
+          </div>
         </div>
 
         <div class="card">
@@ -318,6 +321,11 @@
           <h2>Devi a <span class="partner-name">Laura</span></h2>
           <ul id="owe-list" class="expense-list debt-list"></ul>
           <p id="owe-empty" class="empty">Nessun debito aperto.</p>
+        </div>
+
+        <div class="card" id="payments-card">
+          <h2>Pagamenti</h2>
+          <ul id="payments-list" class="expense-list payments-list"></ul>
         </div>
 
         <details class="card settled-card">
@@ -492,6 +500,36 @@
     </div>
   </dialog>
 
+  <!-- Pagamento (anche parziale) tra me e il/la partner -->
+  <dialog id="pay-dialog" class="sheet" aria-labelledby="pay-title">
+    <form id="pay-form">
+      <h2 id="pay-title">Registra un pagamento</h2>
+      <div class="choice pay-dir" id="pay-dir">
+        <button type="button" data-dir="in" aria-pressed="true"><span class="partner-name">Laura</span> mi dà</button>
+        <button type="button" data-dir="out" aria-pressed="false">Io do a <span class="partner-name">Laura</span></button>
+      </div>
+      <div class="pay-grid">
+        <label class="field">Importo
+          <span class="money">
+            <input type="number" id="pay-amount" step="0.01" min="0.01" required inputmode="decimal" placeholder="0,00">
+            <span class="suffix">€</span>
+          </span>
+        </label>
+        <label class="field">Data
+          <input type="date" id="pay-date" required>
+        </label>
+      </div>
+      <label class="field"><span id="pay-account-label">Su quale conto arrivano i soldi?</span>
+        <select id="pay-account"></select>
+      </label>
+      <div id="pay-preview" class="pay-preview"></div>
+      <div class="sheet-actions">
+        <button type="button" class="btn ghost" id="pay-cancel">Annulla</button>
+        <button type="submit" class="btn primary">Conferma</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Conferma prima di segnare un debito come saldato -->
   <dialog id="settle-dialog" class="sheet" aria-labelledby="settle-title">
     <form method="dialog" id="settle-form">
@@ -525,6 +563,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=25"></script>
+  <script src="app.js?v=26"></script>
 </body>
 </html>

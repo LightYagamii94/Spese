@@ -25,10 +25,11 @@ function load() {
       if (!parsed.goal || !(parsed.goal.target > 0)) parsed.goal = { target: 10000 };
       if (!Array.isArray(parsed.goals)) parsed.goals = [];
       if (!Array.isArray(parsed.goalsDone)) parsed.goalsDone = [];
+      if (!Array.isArray(parsed.debtPayments)) parsed.debtPayments = [];
       return parsed;
     }
   } catch {}
-  return { expenses: [], incomes: [], transfers: [], areas: [], accounts: [], partner: 'Laura', goal: { target: 10000 }, goals: [], goalsDone: [] };
+  return { expenses: [], incomes: [], transfers: [], areas: [], accounts: [], partner: 'Laura', goal: { target: 10000 }, goals: [], goalsDone: [], debtPayments: [] };
 }
 
 function save() {
@@ -216,7 +217,67 @@ function accountFlow(x, accountId) {
   return flow;
 }
 
-const openDebts = () => data.expenses.filter((x) => debtOf(x) && !x.split.settled);
+// Pagamenti (anche parziali) tra me e il/la partner: 'in' = mi dà dei soldi e copre
+// i debiti "owed", 'out' = le do dei soldi e copre i debiti "owe". Ogni pagamento copre
+// prima il debito a cui è legato (debtId, se c'è) e poi i debiti aperti dal più vecchio;
+// quello che avanza resta come credito e copre i debiti che verranno.
+const PAY_DEBT_DIR = { in: 'owed', out: 'owe' };
+const byOldest = (a, b) => a.date.localeCompare(b.date) || (a.at || 0) - (b.at || 0);
+
+function allocatePayments(payments = data.debtPayments) {
+  const paid = new Map();
+  const lastPay = new Map();
+  const credit = { in: 0, out: 0 };
+  for (const dir of ['in', 'out']) {
+    const debts = data.expenses.filter((x) => debtOf(x)?.dir === PAY_DEBT_DIR[dir] && !x.split.settled).sort(byOldest);
+    const left = new Map(debts.map((x) => [x.id, debtOf(x).amount]));
+    const cover = (x, p, money) => {
+      const take = round2(Math.min(left.get(x.id), money));
+      if (take <= 0) return money;
+      left.set(x.id, round2(left.get(x.id) - take));
+      paid.set(x.id, round2((paid.get(x.id) || 0) + take));
+      if (!lastPay.has(x.id) || lastPay.get(x.id).date < p.date) lastPay.set(x.id, p);
+      return round2(money - take);
+    };
+    const pays = payments.filter((p) => p.dir === dir).sort(byOldest);
+    const rest = new Map();
+    for (const p of pays) {
+      const target = p.debtId && debts.find((x) => x.id === p.debtId);
+      rest.set(p.id, target ? cover(target, p, p.amount) : p.amount);
+    }
+    for (const p of pays) {
+      let money = rest.get(p.id);
+      for (const x of debts) {
+        if (money <= 0) break;
+        money = cover(x, p, money);
+      }
+      credit[dir] = round2(credit[dir] + money);
+    }
+  }
+  return { paid, lastPay, credit };
+}
+
+// Quanto resta da pagare di un debito (0 se saldato o coperto dai pagamenti).
+function debtLeft(x, alloc = allocatePayments()) {
+  const debt = debtOf(x);
+  if (!debt || x.split.settled) return 0;
+  return round2(debt.amount - (alloc.paid.get(x.id) || 0));
+}
+
+const openDebts = (alloc = allocatePayments()) => data.expenses.filter((x) => debtLeft(x, alloc) > 0.005);
+const coveredDebts = (alloc = allocatePayments()) => data.expenses.filter((x) => debtOf(x) && !x.split.settled && debtLeft(x, alloc) <= 0.005);
+
+// Totali aperti per direzione; il credito avanzato conta come debito nella direzione opposta
+// (se mi ha dato più del dovuto, quei soldi glieli devo io).
+function debtTotals(alloc = allocatePayments()) {
+  let owed = 0;
+  let owe = 0;
+  for (const x of openDebts(alloc)) {
+    if (debtOf(x).dir === 'owed') owed += debtLeft(x, alloc);
+    else owe += debtLeft(x, alloc);
+  }
+  return { owed: round2(owed), owe: round2(owe), creditIn: alloc.credit.in, creditOut: alloc.credit.out };
+}
 
 function updateDebtBadge() {
   const badge = document.getElementById('debt-badge');
@@ -234,6 +295,7 @@ function netFlow(a) {
     if (x.toId === a.id) flow += x.amount;
     if (x.fromId === a.id) flow -= x.amount;
   }
+  for (const p of data.debtPayments) if (p.accountId === a.id) flow += p.dir === 'in' ? p.amount : -p.amount;
   return flow;
 }
 
@@ -435,9 +497,12 @@ function splitChips(x) {
   const chips = [el('span', { className: 'chip', textContent: `👥 con ${partnerName()}` })];
   const debt = debtOf(x);
   if (debt) {
-    const text = x.split.settled ? 'saldato ✓'
-      : debt.dir === 'owed' ? `${partnerName()} ti deve ${euro.format(debt.amount)}` : `devi ${euro.format(debt.amount)} a ${partnerName()}`;
-    chips.push(el('span', { className: `chip ${x.split.settled ? 'ok' : 'debt'}`, textContent: text }));
+    const left = debtLeft(x);
+    const done = left <= 0.005;
+    const amount = euro.format(left) + (done || left === debt.amount ? '' : ` di ${euro.format(debt.amount)}`);
+    const text = done ? 'saldato ✓'
+      : debt.dir === 'owed' ? `${partnerName()} ti deve ${amount}` : `devi ${amount} a ${partnerName()}`;
+    chips.push(el('span', { className: `chip ${done ? 'ok' : 'debt'}`, textContent: text }));
   }
   return chips;
 }
@@ -489,7 +554,7 @@ function expenseRow(x) {
   del.addEventListener('click', () => {
     const back = account && accountFlow(x, account.id) < 0 ? `\n${euro.format(-accountFlow(x, account.id))} torneranno sul conto "${account.name}".` : '';
     const debt = debtOf(x);
-    const debtNote = debt && !x.split.settled ? '\nVerrà eliminato anche il debito collegato.' : '';
+    const debtNote = debt && debtLeft(x) > 0.005 ? '\nVerrà eliminato anche il debito collegato.' : '';
     if (!confirm(`Eliminare "${title}"?${back}${debtNote}`)) return;
     data.expenses = data.expenses.filter((y) => y.id !== x.id);
     if (editing?.id === x.id) stopEdit();
@@ -1667,18 +1732,44 @@ function markSettled(list, accountId) {
   renderDebts();
 }
 
-function debtItem(x, settled) {
+const fmtDate = (iso) => { const [y, m, d] = (iso || '').split('-'); return d ? `${d}/${m}/${y}` : ''; };
+
+// Registra un pagamento; se debtId è indicato, copre prima quel debito.
+function addPayment({ dir, amount, date, accountId, debtId }) {
+  data.debtPayments.push({
+    id: crypto.randomUUID(), dir, amount: round2(amount), date: date || todayIso(),
+    ...(findAccount(accountId) ? { accountId } : {}), ...(debtId ? { debtId } : {}), at: Date.now(),
+  });
+}
+
+// Salda per intero una lista di debiti: quelli già pagati in parte ricevono un pagamento
+// per il residuo (così i pagamenti fatti restano dove sono), gli altri vengono segnati come saldati.
+function settleDebts(list, accountId) {
+  const alloc = allocatePayments();
+  const whole = [];
+  for (const x of list) {
+    const left = debtLeft(x, alloc);
+    if (left <= 0.005) continue;
+    if (alloc.paid.get(x.id)) addPayment({ dir: debtOf(x).dir === 'owed' ? 'in' : 'out', amount: left, accountId, debtId: x.id });
+    else whole.push(x);
+  }
+  markSettled(whole, accountId);
+}
+
+function debtItem(x, state, alloc) {
   const debt = debtOf(x);
   const [, mo, d] = x.date.split('-');
   const found = x.subId ? findSub(x.subId) : null;
   const tags = [];
   if (found) tags.push(el('span', { className: 'chip', textContent: `${found.macro.name} › ${found.sub.name}` }));
   tags.push(el('span', { className: 'chip', textContent: `totale ${euro.format(x.amount)}` }));
-  let action;
-  if (settled) {
+  const left = debtLeft(x, alloc);
+  let action = null;
+  let shown = debt.amount;
+  if (state === 'settled') {
     const acc = x.split.settleAccountId ? findAccount(x.split.settleAccountId) : null;
-    const [sy, sm, sd] = (x.split.settledAt || '').split('-');
-    tags.push(el('span', { className: 'chip ok', textContent: `saldato${sd ? ` il ${sd}/${sm}/${sy}` : ''}${acc ? ` · ${acc.emoji} ${acc.name}` : ''}` }));
+    const when = fmtDate(x.split.settledAt);
+    tags.push(el('span', { className: 'chip ok', textContent: `saldato${when ? ` il ${when}` : ''}${acc ? ` · ${acc.emoji} ${acc.name}` : ''}` }));
     action = el('button', { type: 'button', className: 'btn ghost', textContent: 'Annulla' });
     action.title = 'Segna di nuovo come da saldare';
     action.addEventListener('click', () => {
@@ -1689,61 +1780,106 @@ function debtItem(x, settled) {
       save();
       renderDebts();
     });
+  } else if (state === 'covered') {
+    const p = alloc.lastPay.get(x.id);
+    tags.push(el('span', { className: 'chip ok', textContent: `coperto dal pagamento del ${fmtDate(p?.date)}` }));
   } else {
+    const paid = alloc.paid.get(x.id) || 0;
+    shown = left;
+    if (paid > 0) tags.push(el('span', { className: 'chip partial', textContent: `restano ${euro.format(left)} di ${euro.format(debt.amount)}` }));
     action = el('button', { type: 'button', className: 'btn primary', textContent: 'Saldato' });
     action.addEventListener('click', () => {
       const name = partnerName();
       const owed = debt.dir === 'owed';
       openSettleDialog({
         title: owed ? `${name} ti ha restituito i soldi?` : `Hai restituito i soldi a ${name}?`,
-        text: [owed ? `${name} ti restituisce ` : `Restituisci a ${name} `, el('b', { textContent: euro.format(debt.amount) }), ` per "${expenseTitle(x)}".`],
+        text: [owed ? `${name} ti restituisce ` : `Restituisci a ${name} `, el('b', { textContent: euro.format(left) }),
+          `${paid > 0 ? ' (il resto)' : ''} per "${expenseTitle(x)}".`],
         accountLabel: owed ? 'Su quale conto sono arrivati?' : 'Da quale conto sono usciti?',
         account: x.accountId || readLast().accountId,
-        onConfirm: (accountId) => markSettled([x], accountId),
+        onConfirm: (accountId) => settleDebts([x], accountId),
       });
     });
   }
   return el('li', {},
     el('span', { className: 'date-badge' }, el('b', { textContent: d }), el('small', { textContent: MONTHS[Number(mo) - 1] })),
     el('div', { className: 'expense-main' }, el('div', { className: 'desc', textContent: expenseTitle(x) }), el('div', { className: 'tags' }, ...tags)),
-    el('div', { className: 'debt-side' }, el('span', { className: 'expense-amount', textContent: euro.format(debt.amount) }), action));
+    el('div', { className: 'debt-side' }, el('span', { className: 'expense-amount', textContent: euro.format(shown) }), ...(action ? [action] : [])));
+}
+
+function paymentItem(p, alloc) {
+  const name = partnerName();
+  const [, mo, d] = p.date.split('-');
+  const acc = p.accountId ? findAccount(p.accountId) : null;
+  const tags = [];
+  if (acc) tags.push(el('span', { className: 'chip', textContent: `${acc.emoji} ${acc.name}` }));
+  const covered = coveredDebts(alloc).filter((x) => alloc.lastPay.get(x.id)?.id === p.id).length;
+  if (covered) tags.push(el('span', { className: 'chip ok', textContent: `ha chiuso ${covered} ${covered === 1 ? 'debito' : 'debiti'}` }));
+  const del = iconButton('trash', 'Elimina pagamento', 'danger');
+  del.addEventListener('click', () => {
+    const accNote = acc ? `\n${euro.format(p.amount)} ${p.dir === 'in' ? 'verranno tolti dal' : 'torneranno sul'} conto "${acc.name}".` : '';
+    if (!confirm(`Eliminare il pagamento di ${euro.format(p.amount)} del ${fmtDate(p.date)}?${accNote}\nI debiti che copriva torneranno da saldare.`)) return;
+    data.debtPayments = data.debtPayments.filter((q) => q.id !== p.id);
+    save();
+    renderDebts();
+  });
+  return el('li', {},
+    el('span', { className: `date-badge ${p.dir === 'in' ? 'in' : 'pay'}` }, el('b', { textContent: d }), el('small', { textContent: MONTHS[Number(mo) - 1] })),
+    el('div', { className: 'expense-main' },
+      el('div', { className: 'desc', textContent: p.dir === 'in' ? `${name} ti ha dato` : `Hai dato a ${name}` }),
+      el('div', { className: 'tags' }, ...tags)),
+    el('span', { className: `expense-amount${p.dir === 'in' ? ' in' : ''}`, textContent: `${p.dir === 'in' ? '+' : '−'}${euro.format(p.amount)}` }),
+    del);
 }
 
 function renderDebts() {
   applyPartnerName();
   const name = partnerName();
+  const alloc = allocatePayments();
   const byDate = (a, b) => b.date.localeCompare(a.date);
-  const open = openDebts().sort(byDate);
+  const open = openDebts(alloc).sort(byDate);
   const owed = open.filter((x) => debtOf(x).dir === 'owed');
   const owe = open.filter((x) => debtOf(x).dir === 'owe');
-  const settled = data.expenses.filter((x) => debtOf(x) && x.split.settled)
-    .sort((a, b) => (b.split.settledAt || '').localeCompare(a.split.settledAt || '') || byDate(a, b));
+  const settledAt = (x) => (x.split.settled ? x.split.settledAt : alloc.lastPay.get(x.id)?.date) || '';
+  const settled = [...data.expenses.filter((x) => debtOf(x) && x.split.settled), ...coveredDebts(alloc)]
+    .sort((a, b) => settledAt(b).localeCompare(settledAt(a)) || byDate(a, b));
 
-  const owedTotal = round2(owed.reduce((s, x) => s + debtOf(x).amount, 0));
-  const oweTotal = round2(owe.reduce((s, x) => s + debtOf(x).amount, 0));
+  const t = debtTotals(alloc);
+  const owedTotal = round2(t.owed + t.creditOut);
+  const oweTotal = round2(t.owe + t.creditIn);
   const net = round2(owedTotal - oweTotal);
   $('debt-label').textContent = net > 0 ? `${name} ti deve` : net < 0 ? `Devi a ${name}` : 'Siete in pari';
   $('debt-net').textContent = euro.format(Math.abs(net));
-  $('debt-sub').textContent = owed.length && owe.length
+  const sub = owedTotal && oweTotal
     ? `${name} ti deve ${euro.format(owedTotal)} · tu le devi ${euro.format(oweTotal)}`
     : open.length ? `${open.length} ${open.length === 1 ? 'spesa da saldare' : 'spese da saldare'}` : 'Nessun debito da saldare';
+  const credits = [];
+  if (t.creditIn) credits.push(`${name} ti ha dato ${euro.format(t.creditIn)} in più`);
+  if (t.creditOut) credits.push(`hai dato ${euro.format(t.creditOut)} in più a ${name}`);
+  $('debt-sub').textContent = [sub, ...credits].join(' · ');
   $('settle-all').disabled = open.length === 0;
 
-  $('owed-list').replaceChildren(...owed.map((x) => debtItem(x, false)));
+  $('owed-list').replaceChildren(...owed.map((x) => debtItem(x, 'open', alloc)));
   $('owed-empty').hidden = owed.length > 0;
-  $('owe-list').replaceChildren(...owe.map((x) => debtItem(x, false)));
+  $('owe-list').replaceChildren(...owe.map((x) => debtItem(x, 'open', alloc)));
   $('owe-empty').hidden = owe.length > 0;
-  $('settled-list').replaceChildren(...settled.map((x) => debtItem(x, true)));
+  $('settled-list').replaceChildren(...settled.map((x) => debtItem(x, x.split.settled ? 'settled' : 'covered', alloc)));
   $('settled-count').textContent = String(settled.length);
   $('settled-list').closest('details').hidden = settled.length === 0;
+
+  const pays = [...data.debtPayments].sort((a, b) => b.date.localeCompare(a.date) || (b.at || 0) - (a.at || 0));
+  $('payments-list').replaceChildren(...pays.map((p) => paymentItem(p, alloc)));
+  $('payments-card').hidden = pays.length === 0;
 }
 
 $('settle-all').addEventListener('click', () => {
-  const open = openDebts();
+  const alloc = allocatePayments();
+  const open = openDebts(alloc);
   if (!open.length) return;
   const name = partnerName();
-  const owedTotal = round2(open.filter((x) => debtOf(x).dir === 'owed').reduce((s, x) => s + debtOf(x).amount, 0));
-  const oweTotal = round2(open.filter((x) => debtOf(x).dir === 'owe').reduce((s, x) => s + debtOf(x).amount, 0));
+  const sum = (dir) => round2(open.filter((x) => debtOf(x).dir === dir).reduce((s, x) => s + debtLeft(x, alloc), 0));
+  const owedTotal = sum('owed');
+  const oweTotal = sum('owe');
   const net = round2(owedTotal - oweTotal);
   const details = [];
   if (owedTotal) details.push(el('li', { textContent: `${name} ti deve ${euro.format(owedTotal)}` }));
@@ -1755,8 +1891,83 @@ $('settle-all').addEventListener('click', () => {
     text: [...outcome, el('ul', {}, ...details)],
     accountLabel: net >= 0 ? 'Su quale conto arrivano i soldi?' : 'Da quale conto escono i soldi?',
     account: readLast().accountId,
-    onConfirm: (accountId) => markSettled(open, accountId),
+    onConfirm: (accountId) => settleDebts(open, accountId),
   });
+});
+
+// ---------- Registra pagamento (anche parziale) ----------
+
+let payDir = 'in';
+
+function payDraft() {
+  const amount = round2(Number($('pay-amount').value));
+  return amount > 0 ? { id: 'draft', dir: payDir, amount, date: $('pay-date').value || todayIso(), at: Infinity } : null;
+}
+
+function renderPayPreview() {
+  const name = partnerName();
+  for (const b of $('pay-dir').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.dir === payDir));
+  $('pay-account-label').textContent = payDir === 'in' ? 'Su quale conto arrivano i soldi?' : 'Da quale conto escono i soldi?';
+  const box = $('pay-preview');
+  const before = allocatePayments();
+  const dirDebts = openDebts(before).filter((x) => debtOf(x).dir === PAY_DEBT_DIR[payDir]).sort(byOldest);
+  const totalLeft = round2(dirDebts.reduce((s, x) => s + debtLeft(x, before), 0));
+  const draft = payDraft();
+  if (!draft) {
+    box.replaceChildren(dirDebts.length
+      ? `${payDir === 'in' ? `${name} ti deve` : `Devi a ${name}`} ${euro.format(totalLeft)}: il pagamento copre i debiti dal più vecchio.`
+      : `${payDir === 'in' ? `${name} non ti deve niente` : `Non devi niente a ${name}`}: il pagamento resterà come credito.`);
+    return;
+  }
+  const after = allocatePayments([...data.debtPayments, draft]);
+  const rows = [];
+  for (const x of dirDebts) {
+    const was = debtLeft(x, before);
+    const now = debtLeft(x, after);
+    if (now === was) continue;
+    rows.push(el('li', {}, `${expenseTitle(x)} (${fmtDate(x.date)}): `,
+      now <= 0.005 ? el('b', { textContent: 'saldato' }) : el('span', {}, 'restano ', el('b', { textContent: euro.format(now) }))));
+  }
+  const extra = round2(after.credit[payDir] - before.credit[payDir]);
+  box.replaceChildren(
+    el('div', {}, rows.length ? 'Con questo pagamento:' : 'Nessun debito da coprire.'),
+    ...(rows.length ? [el('ul', {}, ...rows)] : []),
+    ...(extra > 0 ? [el('div', { className: 'credit', textContent: `Avanzano ${euro.format(extra)}: ${payDir === 'in' ? `restano come credito di ${name}` : 'restano come tuo credito'} e copriranno le prossime spese divise.` })] : []));
+}
+
+$('pay-open').addEventListener('click', () => {
+  const t = debtTotals();
+  payDir = t.owe > t.owed ? 'out' : 'in';
+  $('pay-amount').value = '';
+  $('pay-date').value = todayIso();
+  const sel = $('pay-account');
+  sel.replaceChildren(
+    el('option', { value: '', textContent: 'Nessun conto (non tracciato)' }),
+    ...data.accounts.map((a) => el('option', { value: a.id, textContent: `${a.emoji} ${a.name}` })));
+  sel.value = findAccount(readLast().accountId) ? readLast().accountId : '';
+  applyPartnerName();
+  renderPayPreview();
+  $('pay-dialog').showModal();
+  $('pay-amount').focus();
+});
+$('pay-dir').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-dir]');
+  if (!b) return;
+  payDir = b.dataset.dir;
+  renderPayPreview();
+});
+$('pay-amount').addEventListener('input', renderPayPreview);
+$('pay-date').addEventListener('input', renderPayPreview);
+$('pay-cancel').addEventListener('click', () => $('pay-dialog').close());
+$('pay-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const draft = payDraft();
+  if (!draft) return;
+  addPayment({ dir: draft.dir, amount: draft.amount, date: draft.date, accountId: $('pay-account').value });
+  $('pay-dialog').close();
+  save();
+  renderDebts();
+  showToast(`Pagamento di ${euro.format(draft.amount)} registrato.`);
 });
 
 // ---------- Obiettivi: il cassetto ----------
@@ -1777,8 +1988,9 @@ function stashBreakdown() {
   for (const m of data.areas) for (const sub of m.subs) reserved += Math.max(0, sub.budget - (spentBySub[sub.id] || 0));
   reserved = round2(reserved);
 
-  const owe = round2(openDebts().filter((x) => debtOf(x).dir === 'owe').reduce((s, x) => s + debtOf(x).amount, 0));
-  const owed = round2(openDebts().filter((x) => debtOf(x).dir === 'owed').reduce((s, x) => s + debtOf(x).amount, 0));
+  const t = debtTotals();
+  const owe = round2(t.owe + t.creditIn);
+  const owed = round2(t.owed + t.creditOut);
   return { nowYm, total, excludedAccounts, excluded, reserved, owe, owed, stash: round2(total - excluded - reserved - owe) };
 }
 
@@ -2324,6 +2536,9 @@ $('import').addEventListener('change', async (e) => {
     && ({ id: String(x.id), date: x.date, description: String(x.description ?? ''), accountId: x.accountId, amount: x.amount, ...(typeof x.at === 'number' ? { at: x.at } : {}) }));
   if (parsed && Array.isArray(parsed.transfers)) mergeById('transfers', parsed.transfers, (x) => typeof x.fromId === 'string' && typeof x.toId === 'string'
     && ({ id: String(x.id), date: x.date, description: String(x.description ?? ''), fromId: x.fromId, toId: x.toId, amount: x.amount, ...(typeof x.at === 'number' ? { at: x.at } : {}) }));
+  if (parsed && Array.isArray(parsed.debtPayments)) mergeById('debtPayments', parsed.debtPayments, (x) => (x.dir === 'in' || x.dir === 'out')
+    && ({ id: String(x.id), dir: x.dir, date: x.date, amount: x.amount, ...(typeof x.accountId === 'string' ? { accountId: x.accountId } : {}),
+      ...(typeof x.debtId === 'string' ? { debtId: x.debtId } : {}), ...(typeof x.at === 'number' ? { at: x.at } : {}) }));
   if (typeof parsed?.partner === 'string' && parsed.partner) data.partner = parsed.partner;
   if (parsed?.goal?.target > 0) data.goal = { target: Number(parsed.goal.target) };
   const cleanGoal = (g) => (g && g.id && typeof g.name === 'string' && g.target > 0
@@ -2354,7 +2569,7 @@ updateDebtBadge();
 
 // ---------- Versione e aggiornamenti ----------
 // Da aumentare insieme a version.json e ai ?v= di index.html a ogni modifica.
-const APP_VERSION = 25;
+const APP_VERSION = 26;
 $('app-version').textContent = `Versione ${APP_VERSION}`;
 
 // L'app installata può restare aperta in memoria per giorni: quando torna in

@@ -128,6 +128,8 @@ main {
   transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
 }
 .btn:active { transform: scale(0.97); }
+.btn:focus { outline: none; }
+.btn:focus-visible { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent); }
 
 .btn.primary {
   color: #fff;
@@ -449,6 +451,13 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
 .type-switch button[data-type="income"][aria-pressed="true"] { color: var(--income); }
 .type-switch button[data-type="transfer"][aria-pressed="true"] { color: var(--accent); }
 
+.backup-card { margin-top: 18px; }
+.backup-line { margin: 0 0 8px; font-size: 0.9rem; color: var(--muted); }
+.backup-line b { color: var(--text); }
+.backup-line .warn { color: #ea580c; font-weight: 650; }
+.backup-line .ok { color: var(--income); font-weight: 650; }
+.backup-card .row { margin-top: 6px; }
+.backup-actions { display: grid; gap: 8px; }
 .app-version { text-align: center; color: var(--muted); font-size: 0.75rem; margin: 18px 0 0; }
 
 /* Pagina obiettivi */

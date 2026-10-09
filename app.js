@@ -1904,14 +1904,152 @@ window.addEventListener('hashchange', showPage);
 
 // ---------- Backup ----------
 
-$('export').addEventListener('click', () => {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+// ---------- Backup ----------
+// Il telefono non permette a una web app di salvare file da sola: il backup
+// richiede sempre un tocco. L'app però ricorda quando è stato fatto l'ultimo
+// e a fine mese lo propone con una finestra.
+
+const LAST_BACKUP_KEY = 'spese.ui.lastBackup';
+const BACKUP_SNOOZE_KEY = 'spese.ui.backupSnooze';
+
+function readUi(key) {
+  try {
+    return localStorage.getItem(key) || '';
+  } catch {
+    return '';
+  }
+}
+function writeUi(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {}
+}
+
+function backupFile() {
+  const json = JSON.stringify(data, null, 2);
+  const name = `spese-backup-${todayIso()}.json`;
+  return { json, name };
+}
+
+function markBackupDone() {
+  writeUi(LAST_BACKUP_KEY, todayIso());
+  renderBackupStatus();
+}
+
+function downloadBackup() {
+  const { json, name } = backupFile();
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `spese-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+  a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  markBackupDone();
+}
+
+// Condivisione (es. Google Drive) quando il telefono la supporta.
+function canShareBackup() {
+  try {
+    const { json, name } = backupFile();
+    return Boolean(navigator.canShare && navigator.canShare({ files: [new File([json], name, { type: 'application/json' })] }));
+  } catch {
+    return false;
+  }
+}
+
+async function shareBackup() {
+  const { json, name } = backupFile();
+  try {
+    await navigator.share({ files: [new File([json], name, { type: 'application/json' })], title: name });
+    markBackupDone();
+    return true;
+  } catch {
+    return false; // annullato dall'utente: si può riprovare
+  }
+}
+
+// Ultimo giorno del mese (AAAA-MM-GG) del mese di `iso`.
+function lastDayOfMonth(iso) {
+  const [y, m] = iso.split('-').map(Number);
+  return `${iso.slice(0, 7)}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+}
+
+// Backup dovuto: oggi è l'ultimo giorno del mese e non è stato fatto oggi,
+// oppure manca quello di fine del mese scorso (es. l'app non è stata aperta).
+function backupDue() {
+  const today = todayIso();
+  const last = readUi(LAST_BACKUP_KEY);
+  const endPrev = lastDayOfMonth(`${shiftMonth(today.slice(0, 7), -1)}-01`);
+  if (today === lastDayOfMonth(today) && last < today) return { month: today.slice(0, 7) };
+  if (last < endPrev && data.expenses.length + data.incomes.length > 0) return { month: endPrev.slice(0, 7) };
+  return null;
+}
+
+function maybeShowBackupDialog() {
+  const due = backupDue();
+  if (!due || readUi(BACKUP_SNOOZE_KEY) === todayIso() || $('backup-dialog').open) return;
+  const last = readUi(LAST_BACKUP_KEY);
+  $('backup-title').textContent = last ? `Backup di ${ymLabel(due.month)}` : 'Fai il tuo primo backup';
+  $('backup-text').replaceChildren(
+    'Salva una copia dei tuoi dati: se il telefono o il browser li cancellassero, potrai recuperarli con Importa. ',
+    last ? `Ultimo backup: ${last.split('-').reverse().join('/')}.` : 'Non hai ancora fatto nessun backup.');
+  $('backup-share').hidden = !canShareBackup();
+  $('backup-dialog').showModal();
+}
+
+$('backup-download').addEventListener('click', () => {
+  downloadBackup();
+  $('backup-dialog').close();
+  showToast('Backup scaricato nella cartella Download', '', () => {});
 });
+$('backup-share').addEventListener('click', async () => {
+  if (await shareBackup()) {
+    $('backup-dialog').close();
+    showToast('Backup salvato', '', () => {});
+  }
+});
+$('backup-later').addEventListener('click', () => {
+  writeUi(BACKUP_SNOOZE_KEY, todayIso());
+  $('backup-dialog').close();
+});
+$('backup-now').addEventListener('click', () => {
+  writeUi(BACKUP_SNOOZE_KEY, '');
+  $('backup-title').textContent = 'Backup';
+  $('backup-text').replaceChildren('Salva una copia dei tuoi dati sul telefono oppure su Google Drive o un\'altra app.');
+  $('backup-share').hidden = !canShareBackup();
+  $('backup-dialog').showModal();
+});
+
+// Archiviazione persistente: chiede al browser di non cancellare i dati dell'app.
+let persisted = null;
+async function ensurePersistence() {
+  try {
+    if (!navigator.storage?.persist) return;
+    persisted = await navigator.storage.persisted();
+    if (!persisted) persisted = await navigator.storage.persist();
+  } catch {
+    persisted = null;
+  }
+  renderBackupStatus();
+}
+
+function renderBackupStatus() {
+  const last = readUi(LAST_BACKUP_KEY);
+  const days = last ? Math.round((new Date(todayIso()) - new Date(last)) / 86400000) : null;
+  const when = last ? last.split('-').reverse().join('/') : null;
+  $('backup-status').replaceChildren(
+    'Ultimo backup: ',
+    last
+      ? el('b', { textContent: days === 0 ? `oggi (${when})` : `${when} · ${days} ${days === 1 ? 'giorno' : 'giorni'} fa` })
+      : el('span', { className: 'warn', textContent: 'mai fatto' }),
+    ...(days !== null && days > 35 ? [' · ', el('span', { className: 'warn', textContent: 'conviene farne uno' })] : []));
+  $('persist-status').replaceChildren(
+    'Protezione dalla cancellazione automatica: ',
+    persisted === true ? el('span', { className: 'ok', textContent: 'attiva' })
+      : persisted === false ? el('span', { className: 'warn', textContent: 'non concessa dal browser (installa l\'app e fai backup regolari)' })
+      : el('span', { textContent: 'non disponibile su questo browser' }));
+}
+
+$('export').addEventListener('click', downloadBackup);
 
 $('import').addEventListener('change', async (e) => {
   const file = e.target.files[0];
@@ -1982,7 +2120,7 @@ updateDebtBadge();
 
 // ---------- Versione e aggiornamenti ----------
 // Da aumentare insieme a version.json e ai ?v= di index.html a ogni modifica.
-const APP_VERSION = 22;
+const APP_VERSION = 23;
 $('app-version').textContent = `Versione ${APP_VERSION}`;
 
 // L'app installata può restare aperta in memoria per giorni: quando torna in
@@ -2002,9 +2140,14 @@ async function checkForUpdate() {
   }
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') checkForUpdate();
+  if (document.visibilityState === 'visible') {
+    checkForUpdate();
+    maybeShowBackupDialog();
+  }
 });
 checkForUpdate();
+renderBackupStatus();
+ensurePersistence();
 
 // Service worker: permette di installare l'app e di aprirla anche offline.
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
@@ -2016,4 +2159,5 @@ if (readLegacyVault()) {
   $('migrate').hidden = false;
 } else {
   showPage();
+  maybeShowBackupDialog();
 }

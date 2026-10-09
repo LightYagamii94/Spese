@@ -22,7 +22,7 @@
   <meta name="color-scheme" content="light dark">
   <!-- Il numero di versione (?v=) va aumentato a ogni modifica di style.css o app.js:
        costringe il browser a scaricare i file nuovi invece di usare quelli in cache. -->
-  <link rel="stylesheet" href="style.css?v=22">
+  <link rel="stylesheet" href="style.css?v=23">
 </head>
 <body>
   <header class="appbar">
@@ -403,6 +403,14 @@
 
         <ul id="account-list" class="account-list"></ul>
         <p id="account-empty" class="empty">Nessun conto. Creane uno qui sopra, ad esempio "Conto corrente" o "Contanti".</p>
+        <div class="card backup-card">
+          <h2>Backup e sicurezza dei dati</h2>
+          <p class="backup-line" id="backup-status"></p>
+          <p class="backup-line" id="persist-status"></p>
+          <div class="row">
+            <button type="button" class="btn primary" id="backup-now">Fai il backup ora</button>
+          </div>
+        </div>
         <p class="app-version" id="app-version"></p>
       </div>
     </section>
@@ -418,6 +426,17 @@
       </button>
     </div>
     <div id="area-list" class="area-list"></div>
+  </dialog>
+
+  <!-- Backup di fine mese -->
+  <dialog id="backup-dialog" class="sheet" aria-labelledby="backup-title">
+    <h2 id="backup-title">Backup di fine mese</h2>
+    <p class="settle-text" id="backup-text"></p>
+    <div class="backup-actions">
+      <button type="button" class="btn primary" id="backup-download">Scarica sul telefono</button>
+      <button type="button" class="btn ghost" id="backup-share">Salva su Drive o altre app</button>
+      <button type="button" class="btn ghost" id="backup-later">Più tardi</button>
+    </div>
   </dialog>
 
   <!-- Conferma prima di segnare un debito come saldato -->
@@ -453,6 +472,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=22"></script>
+  <script src="app.js?v=23"></script>
 </body>
 </html>

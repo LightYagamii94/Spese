@@ -8,7 +8,7 @@
 // versione più recente (così gli aggiornamenti arrivano subito); se manca la
 // rete si usa la copia salvata.
 
-const CACHE = 'spese-app-v1';
+const CACHE = 'spese-app-v2';
 const CORE = ['./', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', (event) => {
@@ -24,7 +24,10 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+  const url = new URL(req.url);
+  if (req.method !== 'GET' || url.origin !== self.location.origin) return;
+  // Il controllo degli aggiornamenti va sempre in rete e non si salva in cache.
+  if (url.pathname.endsWith('/version.json')) return;
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
     try {

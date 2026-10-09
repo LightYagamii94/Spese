@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <!-- Nessuna connessione verso l'esterno: script, stili e dati restano locali. -->
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; manifest-src 'self'; worker-src 'self'; form-action 'none'; base-uri 'none'">
+        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; form-action 'none'; base-uri 'none'">
   <meta name="referrer" content="no-referrer">
   <meta name="theme-color" content="#5b5bf0">
   <title>Le mie spese</title>
@@ -19,7 +19,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <!-- Il numero di versione (?v=) va aumentato a ogni modifica di style.css o app.js:
        costringe il browser a scaricare i file nuovi invece di usare quelli in cache. -->
-  <link rel="stylesheet" href="style.css?v=18">
+  <link rel="stylesheet" href="style.css?v=19">
 </head>
 <body>
   <header class="appbar">
@@ -326,6 +326,7 @@
 
         <ul id="account-list" class="account-list"></ul>
         <p id="account-empty" class="empty">Nessun conto. Creane uno qui sopra, ad esempio "Conto corrente" o "Contanti".</p>
+        <p class="app-version" id="app-version"></p>
       </div>
     </section>
   </main>
@@ -375,6 +376,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=11"></script>
+  <script src="app.js?v=19"></script>
 </body>
 </html>

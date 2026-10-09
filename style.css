@@ -449,6 +449,8 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
 .type-switch button[data-type="income"][aria-pressed="true"] { color: var(--income); }
 .type-switch button[data-type="transfer"][aria-pressed="true"] { color: var(--accent); }
 
+.app-version { text-align: center; color: var(--muted); font-size: 0.75rem; margin: 18px 0 0; }
+
 /* Modifica di un movimento */
 .edit-bar {
   display: flex;

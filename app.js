@@ -921,7 +921,8 @@ $('month').addEventListener('change', render);
 
 // Avviso temporaneo in basso, con un pulsante facoltativo.
 let toastTimer;
-function showToast(text, actionLabel, onAction) {
+// `duration` in millisecondi; 0 = resta finché non si preme il pulsante.
+function showToast(text, actionLabel, onAction, duration = 6000) {
   const toast = $('toast');
   const action = el('button', { type: 'button', className: 'toast-action', textContent: actionLabel });
   action.addEventListener('click', () => {
@@ -931,7 +932,7 @@ function showToast(text, actionLabel, onAction) {
   toast.replaceChildren(el('span', { textContent: text }), ...(actionLabel ? [action] : []));
   toast.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { toast.hidden = true; }, 6000);
+  if (duration) toastTimer = setTimeout(() => { toast.hidden = true; }, duration);
 }
 
 // ---------- Macro aree e sotto aree ----------
@@ -1709,6 +1710,32 @@ $('month').dataset.today = iso.slice(0, 7);
 applyPartnerName();
 updateSplitUI();
 updateDebtBadge();
+
+// ---------- Versione e aggiornamenti ----------
+// Da aumentare insieme a version.json e ai ?v= di index.html a ogni modifica.
+const APP_VERSION = 19;
+$('app-version').textContent = `Versione ${APP_VERSION}`;
+
+// L'app installata può restare aperta in memoria per giorni: quando torna in
+// primo piano controlla se online c'è una versione più nuova e lo segnala.
+let lastUpdateCheck = 0;
+async function checkForUpdate() {
+  if (Date.now() - lastUpdateCheck < 60000) return;
+  lastUpdateCheck = Date.now();
+  try {
+    const res = await fetch(`version.json?t=${Date.now()}`, { cache: 'no-store' });
+    const { version } = await res.json();
+    if (Number(version) > APP_VERSION) {
+      showToast('Nuova versione disponibile', 'Aggiorna', () => location.reload(), 0);
+    }
+  } catch {
+    // Offline o file non raggiungibile: si riproverà più tardi.
+  }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') checkForUpdate();
+});
+checkForUpdate();
 
 // Service worker: permette di installare l'app e di aprirla anche offline.
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {

@@ -5,7 +5,7 @@ Web app per registrare le spese personali. I dati restano solo sul tuo dispositi
 ## Dove finiscono i dati
 
 - **Nessun server.** L'app è fatta solo di file statici (`index.html`, `app.js`, `style.css`). Le spese vengono salvate nel browser (localStorage) e non vengono mai inviate da nessuna parte.
-- **Nessuna connessione esterna.** Una Content Security Policy blocca qualsiasi richiesta di rete da parte della pagina (niente analytics, CDN o font esterni).
+- **Nessuna connessione esterna.** Una Content Security Policy blocca qualsiasi richiesta verso altri siti (niente analytics, CDN o font esterni); l'unica richiesta che la pagina fa è `version.json`, sullo stesso sito, per sapere se c'è un aggiornamento.
 - **Nessuna password.** Chiunque usi il tuo browser sul tuo dispositivo può aprire l'app e vedere le spese, ma nessun altro via Internet.
 
 ## Sezioni
@@ -45,4 +45,4 @@ I backup creati con la vecchia versione protetta da password si possono ancora i
 
 Il sito è pubblicato con GitHub Pages dal branch `main`: ogni modifica a `main` aggiorna automaticamente la pagina.
 
-A ogni modifica di `style.css` o `app.js` va aumentato il numero di versione (`?v=`) nei link di `index.html`, altrimenti i browser possono continuare a usare per qualche minuto i file vecchi dalla cache.
+A ogni modifica di `style.css` o `app.js` va aumentato il numero di versione in tre punti: **entrambi** i `?v=` in `index.html`, `APP_VERSION` in `app.js` e `version.json`. Così i browser non usano file vecchi dalla cache e l'app installata mostra l'avviso "Nuova versione disponibile". Il numero è visibile in fondo alla pagina Conti.

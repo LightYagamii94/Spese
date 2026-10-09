@@ -300,8 +300,9 @@ function renderStats() {
   yearSel.value = years.includes(prevYear) ? prevYear : years[0];
 
   for (const b of document.querySelectorAll('.segmented button')) b.setAttribute('aria-pressed', String(b.dataset.period === stats.period));
-  $('stats-month').parentElement.hidden = stats.period !== 'month';
-  yearSel.parentElement.hidden = stats.period !== 'year';
+  $('stats-month').closest('.stepper').hidden = stats.period !== 'month';
+  yearSel.closest('.stepper').hidden = stats.period !== 'year';
+  updateSteppers();
 
   // Spese del periodo e quante volte va contato il budget mensile.
   let inPeriod;
@@ -456,9 +457,16 @@ function makeDraggable(handle, item, onDrop) {
   handle.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
     e.preventDefault();
+    startDrag(handle, item, e.pointerId, onDrop);
+  });
+}
+
+// Avvia il trascinamento di `item` seguendo il puntatore `pointerId`.
+function startDrag(handle, item, pointerId, onDrop) {
+  {
     const list = item.parentElement;
     const before = [...list.children].map((c) => c.dataset.id).join();
-    handle.setPointerCapture(e.pointerId);
+    handle.setPointerCapture(pointerId);
     item.classList.add('dragging');
     document.body.classList.add('is-dragging');
 
@@ -501,7 +509,7 @@ function makeDraggable(handle, item, onDrop) {
     handle.addEventListener('pointermove', move);
     handle.addEventListener('pointerup', end);
     handle.addEventListener('pointercancel', end);
-  });
+  }
 }
 
 // Collega a un manico sia il trascinamento sia lo spostamento con le frecce
@@ -835,6 +843,107 @@ function mergeAccounts(list) {
     }
   }
   save();
+}
+
+// ---------- Frecce per cambiare mese / anno ----------
+
+function shiftMonth(ym, delta) {
+  const i = Number(ym.slice(0, 4)) * 12 + Number(ym.slice(5, 7)) - 1 + delta;
+  return `${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}`;
+}
+
+// Disattiva le frecce dell'anno quando non ci sono anni precedenti/successivi.
+function updateSteppers() {
+  const sel = $('stats-year');
+  for (const b of document.querySelectorAll('.step-btn[data-target="stats-year"]')) {
+    // Gli anni sono in ordine decrescente: "precedente" = opzione successiva.
+    const j = sel.selectedIndex - Number(b.dataset.step);
+    b.disabled = j < 0 || j >= sel.options.length;
+  }
+}
+
+for (const b of document.querySelectorAll('.step-btn')) {
+  b.addEventListener('click', () => {
+    const target = $(b.dataset.target);
+    const step = Number(b.dataset.step);
+    if (target.tagName === 'SELECT') {
+      const j = target.selectedIndex - step;
+      if (j < 0 || j >= target.options.length) return;
+      target.selectedIndex = j;
+    } else {
+      target.value = shiftMonth(target.value || $('month').dataset.today, step);
+    }
+    target.dispatchEvent(new Event('change'));
+  });
+}
+
+// ---------- Ordine dei pulsanti della barra in basso ----------
+// Tenendo premuto un pulsante per mezzo secondo lo si può trascinare.
+// L'ordine è una preferenza di questo browser (non finisce nei backup).
+
+const NAV_ORDER_KEY = 'spese.ui.navOrder';
+const nav = document.querySelector('.bottom-nav');
+for (const t of nav.children) {
+  t.dataset.id = t.dataset.page;
+  t.draggable = false; // evita il trascinamento nativo dei link col mouse
+}
+
+try {
+  const order = JSON.parse(localStorage.getItem(NAV_ORDER_KEY)) || [];
+  for (const id of order) {
+    const t = nav.querySelector(`[data-id="${id}"]`);
+    if (t) nav.append(t);
+  }
+} catch {}
+
+// Pulsante appena trascinato: il "clic" che il browser genera al rilascio
+// non deve aprire la pagina. Gli altri pulsanti restano subito utilizzabili.
+let draggedTab = null;
+for (const tab of nav.children) {
+  tab.addEventListener('contextmenu', (e) => e.preventDefault());
+  tab.addEventListener('click', (e) => {
+    if (tab === draggedTab) {
+      e.preventDefault();
+      draggedTab = null;
+    }
+  });
+  tab.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    let timer = null;
+    const cancel = () => {
+      clearTimeout(timer);
+      tab.removeEventListener('pointermove', onMove);
+      tab.removeEventListener('pointerup', cancel);
+      tab.removeEventListener('pointercancel', cancel);
+    };
+    const onMove = (ev) => {
+      // Se il dito si sposta subito non è una pressione prolungata.
+      if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 8) cancel();
+    };
+    tab.addEventListener('pointermove', onMove);
+    tab.addEventListener('pointerup', cancel);
+    tab.addEventListener('pointercancel', cancel);
+    timer = setTimeout(() => {
+      cancel();
+      draggedTab = tab;
+      navigator.vibrate?.(15);
+      nav.classList.add('reordering');
+      startDrag(tab, tab, e.pointerId, (ids) => {
+        try {
+          localStorage.setItem(NAV_ORDER_KEY, JSON.stringify(ids));
+        } catch {}
+      });
+      const done = () => {
+        nav.classList.remove('reordering');
+        // Se il browser non genera il clic (dito spostato), non lo si aspetta oltre.
+        setTimeout(() => { if (draggedTab === tab) draggedTab = null; }, 400);
+      };
+      tab.addEventListener('pointerup', done, { once: true });
+      tab.addEventListener('pointercancel', done, { once: true });
+    }, 450);
+  });
 }
 
 // ---------- Navigazione ----------

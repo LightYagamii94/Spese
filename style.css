@@ -261,6 +261,11 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--accent); background: var(--accent-soft); }
 .tab.active svg { transform: translateY(-1px) scale(1.06); }
+/* Tenere premuto un pulsante per riordinarlo: niente menu/selezione del sistema. */
+.bottom-nav { touch-action: none; }
+.tab { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+.tab.dragging { background: var(--surface); color: var(--accent); }
+.bottom-nav.reordering .tab:not(.dragging) { opacity: 0.6; }
 
 /* Avviso temporaneo sopra la barra in basso */
 .toast {
@@ -358,6 +363,25 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
   background-size: 5px 5px;
   background-repeat: no-repeat;
 }
+.stepper { display: flex; align-items: center; gap: 6px; }
+.step-btn {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s, transform 0.1s;
+}
+.step-btn:hover { background: rgba(255, 255, 255, 0.26); }
+.step-btn:active { transform: scale(0.92); }
+.step-btn:disabled { opacity: 0.35; cursor: default; }
 .month-picker option { color: var(--text); background: var(--surface); }
 .month-picker input:focus, .month-picker select:focus { background: rgba(255, 255, 255, 0.24); border-color: #fff; box-shadow: none; }
 

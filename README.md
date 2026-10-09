@@ -15,7 +15,7 @@ Web app per registrare le spese personali. I dati restano solo sul tuo dispositi
 - **Aree**: macro aree (es. Casa) con sotto aree (es. Mutuo, Corrente) e relativo budget mensile; macro aree e sotto aree si riordinano trascinandole.
 - **Conti**: i tuoi conti (corrente, contanti, carte, risparmi…) con emoji, nome e saldo, e il saldo totale; si riordinano trascinandoli. Il saldo si aggiorna da solo con le spese pagate da quel conto e si può correggere a mano in qualsiasi momento.
 
-Le pagine si cambiano dalla barra in basso, pensata per l'uso da telefono.
+Le pagine si cambiano dalla barra in basso, pensata per l'uso da telefono; tenendo premuto un pulsante della barra lo si può trascinare per cambiarne l'ordine. Le frecce accanto al mese permettono di passare velocemente al mese precedente o successivo.
 
 ## Backup e più dispositivi
 

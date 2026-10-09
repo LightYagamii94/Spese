@@ -347,12 +347,20 @@ function chooseArea(subId) {
   $('area-btn').focus();
 }
 
-function openAreaPicker() {
-  const current = $('expense-area').value;
+// Selettore delle aree a tendina. Senza opzioni sceglie l'area della spesa nel
+// modulo; con { current, onPick, allowAll } si usa anche per i filtri, dove si
+// può scegliere "Tutte le aree" o un'intera macro area (valore "macro:<id>").
+function openAreaPicker(opts = {}) {
+  const current = opts.current ?? $('expense-area').value;
+  const onPick = opts.onPick ?? chooseArea;
+  const pick = (value) => {
+    if (opts.onPick) $('area-dialog').close();
+    onPick(value);
+  };
   const macros = data.areas.filter((m) => m.subs.length);
   const groups = macros.map((m) => {
     // Aperta solo la macro area della scelta attuale (o l'unica presente).
-    const open = macros.length === 1 || m.subs.some((x) => x.id === current);
+    const open = macros.length === 1 || current === `macro:${m.id}` || m.subs.some((x) => x.id === current);
     const dot = el('span', { className: 'dot' });
     dot.style.background = AVATAR_COLORS[data.areas.indexOf(m) % AVATAR_COLORS.length];
     const head = el('button', { type: 'button', className: 'area-group-head' },
@@ -361,12 +369,14 @@ function openAreaPicker() {
       el('span', { className: 'count', textContent: String(m.subs.length) }),
       el('span', { className: 'chevron' }));
     head.setAttribute('aria-expanded', String(open));
-    const subs = el('div', { className: 'area-subs', hidden: !open }, ...m.subs.map((sub) => {
-      const b = el('button', { type: 'button', className: 'area-sub', textContent: sub.name });
-      b.setAttribute('role', 'menuitemradio');
-      b.setAttribute('aria-checked', String(sub.id === current));
-      b.addEventListener('click', () => chooseArea(sub.id));
-      return b;
+    const options = m.subs.map((sub) => ({ value: sub.id, label: sub.name }));
+    if (opts.allowAll) options.unshift({ value: `macro:${m.id}`, label: `Tutta ${m.name}`, all: true });
+    const subs = el('div', { className: 'area-subs', hidden: !open }, ...options.map((o) => {
+      const btn = el('button', { type: 'button', className: `area-sub${o.all ? ' all' : ''}`, textContent: o.label });
+      btn.setAttribute('role', 'menuitemradio');
+      btn.setAttribute('aria-checked', String(o.value === current));
+      btn.addEventListener('click', () => pick(o.value));
+      return btn;
     }));
     head.addEventListener('click', () => {
       subs.hidden = !subs.hidden;
@@ -374,12 +384,19 @@ function openAreaPicker() {
     });
     return el('div', { className: 'area-group' }, head, subs);
   });
+  if (opts.allowAll) {
+    const all = el('button', { type: 'button', className: 'area-sub all', textContent: 'Tutte le aree' });
+    all.setAttribute('role', 'menuitemradio');
+    all.setAttribute('aria-checked', String(!current));
+    all.addEventListener('click', () => pick(''));
+    groups.unshift(el('div', { className: 'area-group' }, all));
+  }
   $('area-list').replaceChildren(...groups);
   $('area-dialog').showModal();
   ($('area-list').querySelector('[aria-checked="true"]') || $('area-list').querySelector('button'))?.focus();
 }
 
-$('area-btn').addEventListener('click', openAreaPicker);
+$('area-btn').addEventListener('click', () => openAreaPicker());
 $('expense-area').addEventListener('change', updateAreaButton);
 $('area-close').addEventListener('click', () => $('area-dialog').close());
 $('area-dialog').addEventListener('click', (e) => {
@@ -530,15 +547,7 @@ function render() {
   const incomes = data.incomes.filter(inMonth);
   const transfers = data.transfers.filter(inMonth);
 
-  // Un unico elenco, dal più recente; a parità di data prima l'ultimo inserito
-  // (`at` = momento dell'inserimento; i movimenti più vecchi non ce l'hanno).
-  const rows = [
-    ...expenses.map((x) => ({ x, row: expenseRow })),
-    ...incomes.map((x) => ({ x, row: incomeRow })),
-    ...transfers.map((x) => ({ x, row: transferRow })),
-  ].sort((a, b) => b.x.date.localeCompare(a.x.date) || (b.x.at || 0) - (a.x.at || 0)).map((r) => r.row(r.x));
-  $('rows').replaceChildren(...rows);
-  $('empty').hidden = rows.length > 0;
+  renderMovementList(month);
 
   const total = round2(expenses.reduce((s, x) => s + myShare(x), 0));
   $('total').textContent = euro.format(total);
@@ -554,6 +563,219 @@ function render() {
     ? `Entrate ${euro.format(income)} · ${balance >= 0 ? `risparmiati ${euro.format(balance)}` : `in negativo di ${euro.format(-balance)}`}`
     : '';
 }
+
+// ---------- Elenco movimenti: ricerca e filtri ----------
+
+const DEFAULT_TYPES = ['expense', 'income', 'transfer'];
+const flt = { q: '', period: 'auto', year: '', month: '', from: '', to: '', types: new Set(DEFAULT_TYPES), area: '', account: '', splitOnly: false };
+
+// Testo senza maiuscole né accenti, per cercare "perche" e trovare "Perché".
+const fold = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+function filterCount() {
+  return (flt.period !== 'auto' ? 1 : 0) + (flt.types.size !== DEFAULT_TYPES.length ? 1 : 0)
+    + (flt.area ? 1 : 0) + (flt.account ? 1 : 0) + (flt.splitOnly ? 1 : 0);
+}
+const filtersActive = () => Boolean(flt.q.trim()) || filterCount() > 0;
+
+// Periodo effettivo: con una ricerca e il periodo "auto" si cerca in tutti i mesi.
+function periodTest(month) {
+  const period = flt.period === 'auto' && flt.q.trim() ? 'all' : flt.period;
+  if (period === 'all') return () => true;
+  if (period === 'year' && flt.year) return (d) => d.startsWith(`${flt.year}-`);
+  if (period === 'month' && flt.month) return (d) => d.startsWith(flt.month);
+  if (period === 'range') return (d) => (!flt.from || d >= flt.from) && (!flt.to || d <= flt.to);
+  return (d) => d.startsWith(month);
+}
+
+function accountName(id) {
+  const a = id ? findAccount(id) : null;
+  return a ? a.name : '';
+}
+
+function movementText(kind, x) {
+  const parts = [x.description];
+  if (kind === 'expense') {
+    const found = x.subId ? findSub(x.subId) : null;
+    parts.push(found?.macro.name, found?.sub.name, x.category, accountName(x.accountId), x.split ? `divisa ${partnerName()}` : '');
+  } else if (kind === 'income') {
+    parts.push('entrata', accountName(x.accountId));
+  } else {
+    parts.push('trasferimento', accountName(x.fromId), accountName(x.toId));
+  }
+  return fold(parts.filter(Boolean).join(' '));
+}
+
+function passesFilters(kind, x, inPeriod, words) {
+  if (!flt.types.has(kind) || !inPeriod(x.date)) return false;
+  if (flt.splitOnly && !(kind === 'expense' && x.split)) return false;
+  if (flt.area) {
+    if (kind !== 'expense') return false;
+    if (flt.area.startsWith('macro:')) {
+      const macro = data.areas.find((m) => `macro:${m.id}` === flt.area);
+      if (!macro || !macro.subs.some((sub) => sub.id === x.subId)) return false;
+    } else if (x.subId !== flt.area) return false;
+  }
+  if (flt.account) {
+    const ids = kind === 'transfer' ? [x.fromId, x.toId] : [x.accountId];
+    if (!ids.includes(flt.account)) return false;
+  }
+  if (words.length) {
+    const text = movementText(kind, x);
+    if (!words.every((w) => text.includes(w))) return false;
+  }
+  return true;
+}
+
+function areaFilterLabel(value) {
+  if (!value) return 'Tutte le aree';
+  if (value.startsWith('macro:')) {
+    const m = data.areas.find((a) => `macro:${a.id}` === value);
+    return m ? `${m.name} (tutta)` : 'Area eliminata';
+  }
+  const found = findSub(value);
+  return found ? `${found.macro.name} › ${found.sub.name}` : 'Area eliminata';
+}
+
+function periodLabel() {
+  const period = flt.period === 'auto' && flt.q.trim() ? 'all' : flt.period;
+  if (period === 'all') return 'Tutti i mesi';
+  if (period === 'year') return flt.year || 'Anno';
+  if (period === 'month') return flt.month ? ymLabel(flt.month) : 'Mese';
+  if (period === 'range') {
+    const f = (d) => d.split('-').reverse().join('/');
+    return flt.from || flt.to ? `${flt.from ? `dal ${f(flt.from)}` : ''} ${flt.to ? `al ${f(flt.to)}` : ''}`.trim() : 'Da… a…';
+  }
+  return '';
+}
+
+function syncFilterControls() {
+  const years = [...new Set([...data.expenses, ...data.incomes, ...data.transfers].map((x) => x.date.slice(0, 4)))].sort().reverse();
+  if (!years.length) years.push(todayIso().slice(0, 4));
+  $('f-year').replaceChildren(...years.map((y) => el('option', { value: y, textContent: y })));
+  if (!flt.year || !years.includes(flt.year)) flt.year = years[0];
+  $('f-year').value = flt.year;
+  $('f-period').value = flt.period;
+  $('f-year-wrap').hidden = flt.period !== 'year';
+  $('f-month-wrap').hidden = flt.period !== 'month';
+  $('f-range-wrap').hidden = flt.period !== 'range';
+  if (!flt.month) flt.month = $('month').value;
+  $('f-month').value = flt.month;
+  $('f-from').value = flt.from;
+  $('f-to').value = flt.to;
+  for (const b of $('f-types').querySelectorAll('button')) b.setAttribute('aria-pressed', String(flt.types.has(b.dataset.type)));
+  $('f-area').textContent = areaFilterLabel(flt.area);
+  $('f-account').replaceChildren(el('option', { value: '', textContent: 'Tutti i conti' }), ...data.accounts.map(accountOption));
+  $('f-account').value = findAccount(flt.account) ? flt.account : '';
+  $('f-split').checked = flt.splitOnly;
+  const n = filterCount();
+  $('filter-count').hidden = n === 0;
+  $('filter-count').textContent = String(n);
+}
+
+function renderFilterChips() {
+  const chips = [];
+  const chip = (label, onRemove) => {
+    const b = el('button', { type: 'button', className: 'filter-chip', textContent: `${label} ✕` });
+    b.setAttribute('aria-label', `Togli il filtro ${label}`);
+    b.addEventListener('click', () => { onRemove(); render(); });
+    chips.push(b);
+  };
+  const pl = periodLabel();
+  if (pl) chip(pl, () => { flt.period = 'auto'; if (flt.q.trim()) { flt.q = ''; $('search').value = ''; } });
+  if (flt.types.size !== DEFAULT_TYPES.length) {
+    const names = { expense: 'Spese', income: 'Entrate', transfer: 'Trasferimenti' };
+    chip(DEFAULT_TYPES.filter((t) => flt.types.has(t)).map((t) => names[t]).join(', ') || 'Nessun tipo', () => { flt.types = new Set(DEFAULT_TYPES); });
+  }
+  if (flt.area) chip(areaFilterLabel(flt.area), () => { flt.area = ''; });
+  if (flt.account) chip(accountName(flt.account) || 'Conto', () => { flt.account = ''; });
+  if (flt.splitOnly) chip(`Divise con ${partnerName()}`, () => { flt.splitOnly = false; });
+  if (filtersActive()) {
+    const reset = el('button', { type: 'button', className: 'filter-chip reset', textContent: 'Azzera' });
+    reset.addEventListener('click', resetFilters);
+    chips.push(reset);
+  }
+  $('filter-chips').replaceChildren(...chips);
+  $('filter-chips').hidden = chips.length === 0;
+}
+
+function resetFilters() {
+  Object.assign(flt, { q: '', period: 'auto', from: '', to: '', types: new Set(DEFAULT_TYPES), area: '', account: '', splitOnly: false });
+  flt.month = $('month').value;
+  $('search').value = '';
+  render();
+}
+
+function renderMovementList(month) {
+  syncFilterControls();
+  renderFilterChips();
+  const active = filtersActive();
+  const inPeriod = active ? periodTest(month) : (d) => d.startsWith(month);
+  const words = fold(flt.q).split(/\s+/).filter(Boolean);
+  const pass = (kind) => (x) => (active ? passesFilters(kind, x, inPeriod, words) : inPeriod(x.date));
+  const found = [
+    ...data.expenses.filter(pass('expense')).map((x) => ({ x, kind: 'expense', row: expenseRow })),
+    ...data.incomes.filter(pass('income')).map((x) => ({ x, kind: 'income', row: incomeRow })),
+    ...data.transfers.filter(pass('transfer')).map((x) => ({ x, kind: 'transfer', row: transferRow })),
+  ].sort((a, b) => b.x.date.localeCompare(a.x.date) || (b.x.at || 0) - (a.x.at || 0));
+
+  // Più mesi nei risultati: un'intestazione per mese.
+  const months = new Set(found.map((r) => r.x.date.slice(0, 7)));
+  const rows = [];
+  let lastMonth = '';
+  for (const r of found) {
+    const ym = r.x.date.slice(0, 7);
+    if (months.size > 1 && ym !== lastMonth) {
+      rows.push(el('li', { className: 'month-head', textContent: ymLabel(ym) }));
+      lastMonth = ym;
+    }
+    rows.push(r.row(r.x));
+  }
+  $('rows').replaceChildren(...rows);
+  $('empty').hidden = found.length > 0;
+  $('empty').textContent = active ? 'Nessun movimento corrisponde alla ricerca.' : 'Nessun movimento in questo mese.';
+
+  $('results-summary').hidden = !active;
+  if (active) {
+    const spent = round2(found.filter((r) => r.kind === 'expense').reduce((s, r) => s + myShare(r.x), 0));
+    const earned = round2(found.filter((r) => r.kind === 'income').reduce((s, r) => s + r.x.amount, 0));
+    const moved = found.filter((r) => r.kind === 'transfer').length;
+    const parts = [`${found.length} ${found.length === 1 ? 'risultato' : 'risultati'}`];
+    if (flt.types.has('expense')) parts.push(el('span', { className: 'neg', textContent: `spese ${euro.format(spent)}` }));
+    if (flt.types.has('income')) parts.push(el('span', { className: 'pos', textContent: `entrate ${euro.format(earned)}` }));
+    if (flt.types.has('transfer') && moved) parts.push(`${moved} ${moved === 1 ? 'trasferimento' : 'trasferimenti'}`);
+    $('results-summary').replaceChildren(...parts.flatMap((p, i) => (i ? [' · ', p] : [p])));
+  }
+}
+
+$('search').addEventListener('input', () => {
+  flt.q = $('search').value;
+  render();
+});
+$('filters-btn').addEventListener('click', () => {
+  const open = $('filters-panel').hidden;
+  $('filters-panel').hidden = !open;
+  $('filters-btn').setAttribute('aria-expanded', String(open));
+});
+$('f-period').addEventListener('change', () => { flt.period = $('f-period').value; render(); });
+$('f-year').addEventListener('change', () => { flt.year = $('f-year').value; render(); });
+$('f-month').addEventListener('change', () => { flt.month = $('f-month').value; render(); });
+$('f-from').addEventListener('change', () => { flt.from = $('f-from').value; render(); });
+$('f-to').addEventListener('change', () => { flt.to = $('f-to').value; render(); });
+for (const b of $('f-types').querySelectorAll('button')) {
+  b.addEventListener('click', () => {
+    if (flt.types.has(b.dataset.type)) flt.types.delete(b.dataset.type);
+    else flt.types.add(b.dataset.type);
+    render();
+  });
+}
+$('f-area').addEventListener('click', () => openAreaPicker({
+  current: flt.area,
+  allowAll: true,
+  onPick: (v) => { flt.area = v; render(); },
+}));
+$('f-account').addEventListener('change', () => { flt.account = $('f-account').value; render(); });
+$('f-split').addEventListener('change', () => { flt.splitOnly = $('f-split').checked; render(); });
 
 // ---------- Statistiche ----------
 
@@ -2132,7 +2354,7 @@ updateDebtBadge();
 
 // ---------- Versione e aggiornamenti ----------
 // Da aumentare insieme a version.json e ai ?v= di index.html a ogni modifica.
-const APP_VERSION = 24;
+const APP_VERSION = 25;
 $('app-version').textContent = `Versione ${APP_VERSION}`;
 
 // L'app installata può restare aperta in memoria per giorni: quando torna in

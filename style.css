@@ -12,6 +12,7 @@
   --accent-soft: #ecebff;
   --danger: #e5484d;
   --danger-soft: #fdecec;
+  --income: #16a34a;
   --radius: 18px;
   --radius-sm: 12px;
   --shadow: 0 1px 2px rgba(23, 26, 60, 0.04), 0 8px 24px rgba(23, 26, 60, 0.06);
@@ -32,6 +33,7 @@
     --accent-soft: #25264a;
     --danger: #ff6b6f;
     --danger-soft: #3a1e22;
+    --income: #4ade80;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.25);
     --shadow-lift: 0 12px 32px rgba(0, 0, 0, 0.5);
     color-scheme: dark;
@@ -393,7 +395,7 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
   display: grid;
   grid-template-columns: 1fr 1fr 1fr auto;
   grid-template-areas:
-    "title title title title"
+    "type type type type"
     "desc desc area area"
     "date amount acct acct"
     "split split split split"
@@ -402,7 +404,56 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
   gap: 12px;
   align-items: end;
 }
-.form-grid h2 { grid-area: title; }
+.f-type { grid-area: type; }
+.f-to { grid-area: to; }
+/* Campi diversi per spesa / entrata / trasferimento */
+#expense-form[data-type="income"] {
+  grid-template-areas: "type type type type" "desc desc acct acct" "date date amount amount" "btn btn btn btn" "note note note note";
+}
+#expense-form[data-type="transfer"] {
+  grid-template-areas: "type type type type" "acct acct to to" "desc desc date amount" "btn btn btn btn" "note note note note";
+}
+#expense-form:not([data-type="expense"]) .f-area,
+#expense-form:not([data-type="expense"]) .f-split,
+#expense-form:not([data-type="transfer"]) .f-to { display: none; }
+
+.type-switch {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.type-switch button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 650;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.type-switch button[aria-pressed="true"] { background: var(--surface); box-shadow: 0 1px 4px rgba(23, 26, 60, 0.1); }
+.type-switch button[data-type="expense"][aria-pressed="true"] { color: var(--danger); }
+.type-switch button[data-type="income"][aria-pressed="true"] { color: var(--income); }
+.type-switch button[data-type="transfer"][aria-pressed="true"] { color: var(--accent); }
+
+/* Importi nell'elenco movimenti */
+.date-badge.in { background: color-mix(in srgb, var(--income) 14%, transparent); color: var(--income); }
+.date-badge.move { background: var(--surface-2); color: var(--muted); }
+.expense-amount.in { color: var(--income); }
+.expense-amount.move { color: var(--muted); font-weight: 600; }
 .f-desc { grid-area: desc; }
 .f-area { grid-area: area; }
 .f-acct { grid-area: acct; }
@@ -872,8 +923,11 @@ input.rename:focus { background: var(--surface); }
 @media (max-width: 720px) {
   .form-grid {
     grid-template-columns: 1fr 1fr;
-    grid-template-areas: "title title" "desc desc" "area area" "date amount" "acct acct" "split split" "btn btn" "note note";
+    grid-template-areas: "type type" "desc desc" "area area" "date amount" "acct acct" "split split" "btn btn" "note note";
   }
+  #expense-form[data-type="income"] { grid-template-areas: "type type" "desc desc" "acct acct" "date amount" "btn btn" "note note"; }
+  #expense-form[data-type="transfer"] { grid-template-areas: "type type" "acct acct" "to to" "desc desc" "date amount" "btn btn" "note note"; }
+  .type-switch button { font-size: 0.85rem; gap: 4px; }
 }
 
 @media (max-width: 720px) {

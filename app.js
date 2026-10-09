@@ -19,11 +19,13 @@ function load() {
     if (parsed && Array.isArray(parsed.expenses)) {
       if (!Array.isArray(parsed.areas)) parsed.areas = [];
       if (!Array.isArray(parsed.accounts)) parsed.accounts = [];
+      if (!Array.isArray(parsed.incomes)) parsed.incomes = [];
+      if (!Array.isArray(parsed.transfers)) parsed.transfers = [];
       if (typeof parsed.partner !== 'string' || !parsed.partner) parsed.partner = 'Laura';
       return parsed;
     }
   } catch {}
-  return { expenses: [], areas: [], accounts: [], partner: 'Laura' };
+  return { expenses: [], incomes: [], transfers: [], areas: [], accounts: [], partner: 'Laura' };
 }
 
 function save() {
@@ -117,6 +119,7 @@ function mergeExpenses(list) {
         ...(x.category ? { category: String(x.category) } : {}),
         ...(cleanSplit(x.split, x.amount) ? { split: cleanSplit(x.split, x.amount) } : {}),
         amount: x.amount,
+        ...(typeof x.at === 'number' ? { at: x.at } : {}),
       });
       ids.add(x.id);
     }
@@ -220,7 +223,18 @@ function updateDebtBadge() {
   badge.textContent = n > 9 ? '9+' : String(n);
 }
 
-const spentFromAccount = (a) => -data.expenses.reduce((s, x) => s + accountFlow(x, a.id), 0);
+// Somma di tutto ciò che è entrato (+) e uscito (−) da un conto.
+function netFlow(a) {
+  let flow = data.expenses.reduce((s, x) => s + accountFlow(x, a.id), 0);
+  for (const x of data.incomes) if (x.accountId === a.id) flow += x.amount;
+  for (const x of data.transfers) {
+    if (x.toId === a.id) flow += x.amount;
+    if (x.fromId === a.id) flow -= x.amount;
+  }
+  return flow;
+}
+
+const spentFromAccount = (a) => -netFlow(a);
 const currentBalance = (a) => Math.round((a.balance - spentFromAccount(a)) * 100) / 100;
 
 // Ultima area e ultimo conto usati: proposti di nuovo alla spesa successiva.
@@ -238,6 +252,15 @@ function saveLast(v) {
   } catch {}
 }
 
+// Tipo di movimento scelto nel modulo: 'expense' | 'income' | 'transfer'.
+let formType = 'expense';
+// Conto scelto per ogni tipo, così cambiando tipo non si perde la scelta.
+const formAccounts = {};
+
+function accountOption(a) {
+  return el('option', { value: a.id, textContent: `${a.emoji} ${a.name}` });
+}
+
 function fillExpenseSelects() {
   const last = readLast();
   const areaSel = $('expense-area');
@@ -250,18 +273,60 @@ function fillExpenseSelects() {
   updateAreaButton();
 
   const acctSel = $('expense-account');
-  const prevAcct = acctSel.dataset.touched ? acctSel.value : last.accountId ?? acctSel.value;
-  acctSel.replaceChildren(
-    el('option', { value: '', textContent: 'Nessun conto' }),
-    ...data.accounts.map((a) => el('option', { value: a.id, textContent: `${a.emoji} ${a.name}` })));
-  acctSel.value = findAccount(prevAcct) ? prevAcct : '';
+  const toSel = $('transfer-to');
+  const accounts = data.accounts;
+  if (formType === 'expense') {
+    acctSel.replaceChildren(el('option', { value: '', textContent: 'Nessun conto' }), ...accounts.map(accountOption));
+    const v = formAccounts.expense ?? last.accountId;
+    acctSel.value = findAccount(v) ? v : '';
+  } else {
+    acctSel.replaceChildren(el('option', { value: '', textContent: 'Scegli un conto…', disabled: true }), ...accounts.map(accountOption));
+    const v = formType === 'income' ? formAccounts.income ?? last.incomeAccountId : formAccounts.from ?? last.transferFrom;
+    acctSel.value = findAccount(v) ? v : accounts[0]?.id ?? '';
+  }
+  toSel.replaceChildren(el('option', { value: '', textContent: 'Scegli un conto…', disabled: true }), ...accounts.map(accountOption));
+  const to = formAccounts.to ?? last.transferTo;
+  toSel.value = findAccount(to) && to !== acctSel.value ? to : accounts.find((a) => a.id !== acctSel.value)?.id ?? '';
 
-  const hasAreas = groups.length > 0;
-  $('no-areas').hidden = hasAreas;
-  for (const c of $('expense-form').querySelectorAll('input, select, button')) c.disabled = !hasAreas;
+  // Cosa serve per poter registrare il movimento scelto.
+  const notice = $('no-areas');
+  let missing = null;
+  if (formType === 'expense' && !groups.length) missing = ['Per registrare una spesa crea prima almeno una macro area con una sotto area nella pagina ', 'Aree', '#aree'];
+  if (formType === 'income' && !accounts.length) missing = ['Per registrare un\'entrata crea prima un conto nella pagina ', 'Conti', '#conti'];
+  if (formType === 'transfer' && accounts.length < 2) missing = ['Per trasferire soldi servono almeno due conti: creali nella pagina ', 'Conti', '#conti'];
+  notice.hidden = !missing;
+  if (missing) notice.replaceChildren(missing[0], el('a', { href: missing[2], textContent: missing[1] }), '.');
+  for (const c of $('expense-form').querySelectorAll('input, select, button')) {
+    if (!c.closest('.type-switch')) c.disabled = Boolean(missing);
+  }
 }
 
-$('expense-account').addEventListener('change', (e) => { e.target.dataset.touched = '1'; });
+function setFormType(type) {
+  formType = type;
+  const form = $('expense-form');
+  form.dataset.type = type;
+  for (const b of form.querySelectorAll('.type-switch button')) b.setAttribute('aria-pressed', String(b.dataset.type === type));
+  $('acct-label').textContent = { expense: 'Pagata con', income: 'Sul conto', transfer: 'Dal conto' }[type];
+  $('submit-label').textContent = { expense: 'Aggiungi spesa', income: 'Aggiungi entrata', transfer: 'Trasferisci' }[type];
+  $('description').placeholder = type === 'income' ? 'Es. Stipendio (facoltativa)' : 'Facoltativa';
+  fillExpenseSelects();
+  updateSplitUI();
+}
+
+for (const b of document.querySelectorAll('.type-switch button')) {
+  b.addEventListener('click', () => setFormType(b.dataset.type));
+}
+
+$('expense-account').addEventListener('change', (e) => {
+  formAccounts[{ expense: 'expense', income: 'income', transfer: 'from' }[formType]] = e.target.value;
+  // Nel trasferimento i due conti devono essere diversi.
+  if (formType === 'transfer' && $('transfer-to').value === e.target.value) {
+    $('transfer-to').value = data.accounts.find((a) => a.id !== e.target.value)?.id ?? '';
+    formAccounts.to = $('transfer-to').value;
+  }
+});
+$('transfer-to').addEventListener('change', (e) => { formAccounts.to = e.target.value; });
+
 
 // ---------- Selettore dell'area (macro aree a tendina) ----------
 
@@ -340,7 +405,7 @@ function budgetRow(label, spent, budget, extra) {
 
 // Importo nell'elenco: per le spese divise la mia quota, con il totale sotto.
 function amountCell(x) {
-  const cell = el('span', { className: 'expense-amount', textContent: euro.format(myShare(x)) });
+  const cell = el('span', { className: 'expense-amount', textContent: `−${euro.format(myShare(x))}` });
   if (x.split) cell.append(el('small', { textContent: `di ${euro.format(x.amount)}` }));
   return cell;
 }
@@ -364,52 +429,105 @@ function expenseTitle(x) {
   return found ? found.sub.name : x.category || 'Spesa';
 }
 
+function dateBadge(date, kind = '') {
+  const [, mo, d] = date.split('-');
+  return el('span', { className: `date-badge ${kind}`.trim() }, el('b', { textContent: d }), el('small', { textContent: MONTHS[Number(mo) - 1] }));
+}
+
+const accountChip = (a) => el('span', { className: 'chip', textContent: a ? `${a.emoji} ${a.name}` : 'Conto eliminato' });
+
+function expenseRow(x) {
+  const found = x.subId ? findSub(x.subId) : null;
+  const account = x.accountId ? findAccount(x.accountId) : null;
+  const tags = [];
+  if (found) tags.push(el('span', { className: 'chip', textContent: `${found.macro.name} › ${found.sub.name}` }));
+  else if (x.category) tags.push(el('span', { className: 'chip muted', textContent: x.category }));
+  else tags.push(el('span', { className: 'chip muted', textContent: x.subId ? 'Area eliminata' : 'Senza area' }));
+  if (account && !(x.split && x.split.paidBy === 'partner')) tags.push(accountChip(account));
+  tags.push(...splitChips(x));
+
+  const title = expenseTitle(x);
+  const del = iconButton('trash', `Elimina ${title}`, 'danger');
+  del.addEventListener('click', () => {
+    const back = account && accountFlow(x, account.id) < 0 ? `\n${euro.format(-accountFlow(x, account.id))} torneranno sul conto "${account.name}".` : '';
+    const debt = debtOf(x);
+    const debtNote = debt && !x.split.settled ? '\nVerrà eliminato anche il debito collegato.' : '';
+    if (!confirm(`Eliminare "${title}"?${back}${debtNote}`)) return;
+    data.expenses = data.expenses.filter((y) => y.id !== x.id);
+    save();
+    render();
+  });
+  return el('li', {}, dateBadge(x.date),
+    el('div', { className: 'expense-main' }, el('div', { className: 'desc', textContent: title }), el('div', { className: 'tags' }, ...tags)),
+    amountCell(x), del);
+}
+
+function incomeRow(x) {
+  const account = findAccount(x.accountId);
+  const title = x.description || 'Entrata';
+  const del = iconButton('trash', `Elimina ${title}`, 'danger');
+  del.addEventListener('click', () => {
+    const note = account ? `\n${euro.format(x.amount)} verranno tolti dal conto "${account.name}".` : '';
+    if (!confirm(`Eliminare l'entrata "${title}"?${note}`)) return;
+    data.incomes = data.incomes.filter((y) => y.id !== x.id);
+    save();
+    render();
+  });
+  return el('li', {}, dateBadge(x.date, 'in'),
+    el('div', { className: 'expense-main' }, el('div', { className: 'desc', textContent: title }),
+      el('div', { className: 'tags' }, el('span', { className: 'chip ok', textContent: 'Entrata' }), accountChip(account))),
+    el('span', { className: 'expense-amount in', textContent: `+${euro.format(x.amount)}` }), del);
+}
+
+function transferRow(x) {
+  const from = findAccount(x.fromId);
+  const to = findAccount(x.toId);
+  const title = x.description || 'Trasferimento';
+  const del = iconButton('trash', `Elimina ${title}`, 'danger');
+  del.addEventListener('click', () => {
+    const note = from && to ? `\n${euro.format(x.amount)} torneranno da "${to.name}" a "${from.name}".` : '';
+    if (!confirm(`Annullare il trasferimento "${title}"?${note}`)) return;
+    data.transfers = data.transfers.filter((y) => y.id !== x.id);
+    save();
+    render();
+  });
+  const route = `${from ? `${from.emoji} ${from.name}` : '?'} → ${to ? `${to.emoji} ${to.name}` : '?'}`;
+  return el('li', {}, dateBadge(x.date, 'move'),
+    el('div', { className: 'expense-main' }, el('div', { className: 'desc', textContent: title }),
+      el('div', { className: 'tags' }, el('span', { className: 'chip', textContent: route }))),
+    el('span', { className: 'expense-amount move', textContent: euro.format(x.amount) }), del);
+}
+
 function render() {
   fillExpenseSelects();
   const month = $('month').value;
-  const items = data.expenses
-    .filter((x) => x.date.startsWith(month))
-    .sort((a, b) => b.date.localeCompare(a.date));
+  const inMonth = (x) => x.date.startsWith(month);
+  const expenses = data.expenses.filter(inMonth);
+  const incomes = data.incomes.filter(inMonth);
+  const transfers = data.transfers.filter(inMonth);
 
-  const rows = items.map((x) => {
-    const [, mo, d] = x.date.split('-');
-    const found = x.subId ? findSub(x.subId) : null;
-    const account = x.accountId ? findAccount(x.accountId) : null;
-    const tags = [];
-    if (found) tags.push(el('span', { className: 'chip', textContent: `${found.macro.name} › ${found.sub.name}` }));
-    else if (x.category) tags.push(el('span', { className: 'chip muted', textContent: x.category }));
-    else tags.push(el('span', { className: 'chip muted', textContent: x.subId ? 'Area eliminata' : 'Senza area' }));
-    if (account && !(x.split && x.split.paidBy === 'partner')) tags.push(el('span', { className: 'chip', textContent: `${account.emoji} ${account.name}` }));
-    tags.push(...splitChips(x));
-
-    const title = expenseTitle(x);
-    const del = iconButton('trash', `Elimina ${title}`, 'danger');
-    del.addEventListener('click', () => {
-      const back = account && accountFlow(x, account.id) < 0 ? `\n${euro.format(-accountFlow(x, account.id))} torneranno sul conto "${account.name}".` : '';
-      const debt = debtOf(x);
-      const debtNote = debt && !x.split.settled ? '\nVerrà eliminato anche il debito collegato.' : '';
-      if (!confirm(`Eliminare "${title}"?${back}${debtNote}`)) return;
-      data.expenses = data.expenses.filter((y) => y.id !== x.id);
-      save();
-      render();
-    });
-    return el('li', {},
-      el('span', { className: 'date-badge' }, el('b', { textContent: d }), el('small', { textContent: MONTHS[Number(mo) - 1] })),
-      el('div', { className: 'expense-main' },
-        el('div', { className: 'desc', textContent: title }),
-        el('div', { className: 'tags' }, ...tags)),
-      amountCell(x),
-      del);
-  });
+  // Un unico elenco, dal più recente; a parità di data prima l'ultimo inserito
+  // (`at` = momento dell'inserimento; i movimenti più vecchi non ce l'hanno).
+  const rows = [
+    ...expenses.map((x) => ({ x, row: expenseRow })),
+    ...incomes.map((x) => ({ x, row: incomeRow })),
+    ...transfers.map((x) => ({ x, row: transferRow })),
+  ].sort((a, b) => b.x.date.localeCompare(a.x.date) || (b.x.at || 0) - (a.x.at || 0)).map((r) => r.row(r.x));
   $('rows').replaceChildren(...rows);
-  $('empty').hidden = items.length > 0;
+  $('empty').hidden = rows.length > 0;
 
-  const total = round2(items.reduce((s, x) => s + myShare(x), 0));
+  const total = round2(expenses.reduce((s, x) => s + myShare(x), 0));
   $('total').textContent = euro.format(total);
 
   const totalBudget = data.areas.reduce((s, m) => s + macroBudget(m), 0);
   $('budget-hint').textContent = totalBudget > 0
     ? `su ${euro.format(totalBudget)} di budget · ${total <= totalBudget ? `restano ${euro.format(totalBudget - total)}` : `sforato di ${euro.format(total - totalBudget)}`}`
+    : '';
+
+  const income = round2(incomes.reduce((s, x) => s + x.amount, 0));
+  const balance = round2(income - total);
+  $('income-hint').textContent = income > 0
+    ? `Entrate ${euro.format(income)} · ${balance >= 0 ? `risparmiati ${euro.format(balance)}` : `in negativo di ${euro.format(-balance)}`}`
     : '';
 }
 
@@ -537,9 +655,48 @@ for (const b of document.querySelectorAll('#page-statistiche .segmented button')
 $('stats-month').addEventListener('change', renderStats);
 $('stats-year').addEventListener('change', renderStats);
 
+// Dopo il salvataggio: avviso se il movimento è di un altro mese e pulizia dei campi.
+function afterSave(kind) {
+  const savedMonth = $('date').value.slice(0, 7);
+  if (savedMonth !== $('month').value) {
+    const [yy, mm] = savedMonth.split('-');
+    showToast(`${kind} salvat${kind === 'Trasferimento' ? 'o' : 'a'} a ${MONTH_NAMES[Number(mm) - 1]} ${yy}`, 'Vedi', () => {
+      $('month').value = savedMonth;
+      render();
+    });
+  }
+  $('description').value = '';
+  $('amount').value = '';
+  $('amount').focus();
+  render();
+}
+
 $('expense-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const amount = Math.round(parseFloat($('amount').value) * 100) / 100;
+  if (formType === 'income') {
+    const accountId = $('expense-account').value;
+    if (!findAccount(accountId) || !(amount > 0)) return;
+    data.incomes.push({ id: crypto.randomUUID(), date: $('date').value, description: $('description').value.trim(), accountId, amount, at: Date.now() });
+    save();
+    saveLast({ ...readLast(), incomeAccountId: accountId });
+    afterSave('Entrata');
+    return;
+  }
+  if (formType === 'transfer') {
+    const fromId = $('expense-account').value;
+    const toId = $('transfer-to').value;
+    if (!findAccount(fromId) || !findAccount(toId) || !(amount > 0)) return;
+    if (fromId === toId) {
+      showToast('Scegli due conti diversi', '', () => {});
+      return;
+    }
+    data.transfers.push({ id: crypto.randomUUID(), date: $('date').value, description: $('description').value.trim(), fromId, toId, amount, at: Date.now() });
+    save();
+    saveLast({ ...readLast(), transferFrom: fromId, transferTo: toId });
+    afterSave('Trasferimento');
+    return;
+  }
   const subId = $('expense-area').value;
   if (!findSub(subId)) {
     openAreaPicker();
@@ -567,26 +724,16 @@ $('expense-form').addEventListener('submit', (e) => {
     ...(findAccount(accountId) ? { accountId } : {}),
     ...(split ? { split } : {}),
     amount,
+    at: Date.now(),
   });
   save();
-  saveLast({ subId, accountId });
+  saveLast({ ...readLast(), subId, accountId });
   // La pagina resta sul mese che si sta guardando: se la spesa è di un altro
   // mese lo si segnala, con la possibilità di andarci.
-  const expenseMonth = $('date').value.slice(0, 7);
-  if (expenseMonth !== $('month').value) {
-    const [yy, mm] = expenseMonth.split('-');
-    showToast(`Spesa salvata a ${MONTH_NAMES[Number(mm) - 1]} ${yy}`, 'Vedi', () => {
-      $('month').value = expenseMonth;
-      render();
-    });
-  }
-  $('description').value = '';
-  $('amount').value = '';
   $('split-mine').value = '';
   $('split-on').checked = false;
   updateSplitUI();
-  $('description').focus();
-  render();
+  afterSave('Spesa');
 });
 
 // ---------- Modulo: divisione della spesa ----------
@@ -632,7 +779,7 @@ function updateSplitUI() {
     b.setAttribute('aria-pressed', String(b.dataset.value === splitState[group]));
   }
   // Se paga tutto il/la partner il conto non serve.
-  document.querySelector('.f-acct').hidden = on && splitState.paid === 'partner';
+  document.querySelector('.f-acct').hidden = formType === 'expense' && on && splitState.paid === 'partner';
   if (on) updateSplitSummary();
 }
 
@@ -1038,8 +1185,10 @@ function renderAccounts() {
 
     const del = iconButton('trash', `Elimina il conto ${a.name}`, 'danger');
     del.addEventListener('click', () => {
-      const linked = data.expenses.filter((x) => x.accountId === a.id).length;
-      const note = linked ? `\nLe ${linked} spese pagate con questo conto resteranno registrate.` : '';
+      const linked = data.expenses.filter((x) => x.accountId === a.id).length
+        + data.incomes.filter((x) => x.accountId === a.id).length
+        + data.transfers.filter((x) => x.fromId === a.id || x.toId === a.id).length;
+      const note = linked ? `\nI ${linked} movimenti collegati a questo conto resteranno registrati.` : '';
       if (!confirm(`Eliminare il conto "${a.name}"?${note}`)) return;
       data.accounts = data.accounts.filter((x) => x.id !== a.id);
       save();
@@ -1071,6 +1220,18 @@ $('account-form').addEventListener('submit', (e) => {
   $('account-emoji').textContent = newAccountEmoji;
   renderAccounts();
 });
+
+// Aggiunge gli elementi importati non ancora presenti (stesso id), dopo averli controllati.
+function mergeById(key, list, clean) {
+  const ids = new Set(data[key].map((x) => x.id));
+  for (const x of list) {
+    if (!x || !x.id || ids.has(x.id) || typeof x.date !== 'string' || typeof x.amount !== 'number' || !(x.amount > 0)) continue;
+    const item = clean(x);
+    if (!item) continue;
+    data[key].push(item);
+    ids.add(item.id);
+  }
+}
 
 function mergeAccounts(list) {
   const ids = new Set(data.accounts.map((x) => x.id));
@@ -1401,14 +1562,18 @@ $('import').addEventListener('change', async (e) => {
     alert('Il file non è un backup valido.');
     return;
   }
-  const before = data.expenses.length;
+  const before = data.expenses.length + data.incomes.length + data.transfers.length;
   mergeExpenses(list);
   mergeAreas(areas);
   mergeAccounts(accounts);
+  if (parsed && Array.isArray(parsed.incomes)) mergeById('incomes', parsed.incomes, (x) => typeof x.accountId === 'string'
+    && ({ id: String(x.id), date: x.date, description: String(x.description ?? ''), accountId: x.accountId, amount: x.amount, ...(typeof x.at === 'number' ? { at: x.at } : {}) }));
+  if (parsed && Array.isArray(parsed.transfers)) mergeById('transfers', parsed.transfers, (x) => typeof x.fromId === 'string' && typeof x.toId === 'string'
+    && ({ id: String(x.id), date: x.date, description: String(x.description ?? ''), fromId: x.fromId, toId: x.toId, amount: x.amount, ...(typeof x.at === 'number' ? { at: x.at } : {}) }));
   if (typeof parsed?.partner === 'string' && parsed.partner) data.partner = parsed.partner;
   save();
   showPage();
-  alert(`Importate ${data.expenses.length - before} spese.`);
+  alert(`Importati ${data.expenses.length + data.incomes.length + data.transfers.length - before} movimenti.`);
 });
 
 // ---------- Avvio ----------

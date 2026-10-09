@@ -10,12 +10,17 @@ Web app per registrare le spese personali. I dati restano solo sul tuo dispositi
 
 ## Sezioni
 
-- **Spese**: registrazione delle spese (descrizione facoltativa), ognuna collegata a una sotto area e, se vuoi, al conto con cui è stata pagata. Per il mese scelto mostra il totale, quanto resta del budget e l'elenco dei movimenti.
+- **Movimenti**: in cima si sceglie il tipo di movimento.
+  - **Spesa**: collegata a una sotto area e, se vuoi, al conto con cui è stata pagata (descrizione facoltativa).
+  - **Entrata**: soldi in arrivo su un conto (es. stipendio); il saldo del conto sale da solo.
+  - **Trasferimento**: soldi spostati da un conto a un altro; un saldo scende e l'altro sale.
+
+  Per il mese scelto mostra le spese, quanto resta del budget, le entrate e quanto hai risparmiato, più l'elenco unico di tutti i movimenti (spese in −, entrate in + verde, trasferimenti in grigio). Budget e statistiche contano solo le spese.
 - **Spese divise**: con l'interruttore "Da dividere con Laura" una spesa si divide 50/50 o indicando la propria quota in €. Si sceglie chi ha pagato: io tutto, ognuno la sua parte, oppure Laura tutto. Nel budget e nelle statistiche conta solo la propria quota; dal conto esce quanto pagato davvero.
 - **Debiti**: quanto Laura ti deve e quanto le devi, con il saldo netto. Ogni debito si segna come saldato, scegliendo su quale conto sono entrati o usciti i soldi, oppure tutti insieme con "Salda tutto"; c'è sempre una conferma prima e si può annullare dopo. Il nome della persona si cambia in fondo alla pagina.
 - **Statistiche**: per mese, anno o in totale, quanto hai speso e quanto resta del budget, complessivamente e per ogni macro area e sotto area. Il budget annuale è quello mensile × 12; il totale è quello mensile × i mesi trascorsi dalla prima spesa.
 - **Aree**: macro aree (es. Casa) con sotto aree (es. Mutuo, Corrente) e relativo budget mensile; macro aree e sotto aree si riordinano trascinandole.
-- **Conti**: i tuoi conti (corrente, contanti, carte, risparmi…) con emoji, nome e saldo, e il saldo totale; si riordinano trascinandoli. Il saldo si aggiorna da solo con le spese pagate da quel conto e si può correggere a mano in qualsiasi momento.
+- **Conti**: i tuoi conti (corrente, contanti, carte, risparmi…) con emoji, nome e saldo, e il saldo totale; si riordinano trascinandoli. Il saldo si aggiorna da solo con spese, entrate, trasferimenti e debiti saldati su quel conto e si può correggere a mano in qualsiasi momento.
 
 Le pagine si cambiano dalla barra in basso, pensata per l'uso da telefono; tenendo premuto un pulsante della barra lo si può trascinare per cambiarne l'ordine. Le frecce accanto al mese permettono di passare velocemente al mese precedente o successivo.
 

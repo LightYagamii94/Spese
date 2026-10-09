@@ -449,6 +449,31 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
 .type-switch button[data-type="income"][aria-pressed="true"] { color: var(--income); }
 .type-switch button[data-type="transfer"][aria-pressed="true"] { color: var(--accent); }
 
+/* Modifica di un movimento */
+.edit-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 8px 8px 8px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+  scroll-margin-top: 90px;
+}
+.edit-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.edit-bar .btn { min-height: 36px; padding: 0 14px; }
+.form-grid.editing { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent), var(--shadow); }
+
+.list-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.list-head .hint { margin: 0; font-size: 0.8rem; }
+.expense-list li.editable { margin: 0 -8px; padding-left: 8px; padding-right: 8px; cursor: pointer; border-radius: var(--radius-sm); -webkit-tap-highlight-color: transparent; transition: background 0.15s; }
+.expense-list li.editable:hover { background: var(--surface-2); }
+.expense-list li.editable:active { background: var(--surface-2); }
+.expense-list li.editable:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.expense-list li.is-editing { background: var(--accent-soft); }
+
 /* Importi nell'elenco movimenti */
 .date-badge.in { background: color-mix(in srgb, var(--income) 14%, transparent); color: var(--income); }
 .date-badge.move { background: var(--surface-2); color: var(--muted); }

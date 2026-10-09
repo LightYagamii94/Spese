@@ -307,7 +307,7 @@ function setFormType(type) {
   form.dataset.type = type;
   for (const b of form.querySelectorAll('.type-switch button')) b.setAttribute('aria-pressed', String(b.dataset.type === type));
   $('acct-label').textContent = { expense: 'Pagata con', income: 'Sul conto', transfer: 'Dal conto' }[type];
-  $('submit-label').textContent = { expense: 'Aggiungi spesa', income: 'Aggiungi entrata', transfer: 'Trasferisci' }[type];
+  $('submit-label').textContent = editing ? 'Salva modifiche' : { expense: 'Aggiungi spesa', income: 'Aggiungi entrata', transfer: 'Trasferisci' }[type];
   $('description').placeholder = type === 'income' ? 'Es. Stipendio (facoltativa)' : 'Facoltativa';
   fillExpenseSelects();
   updateSplitUI();
@@ -436,6 +436,24 @@ function dateBadge(date, kind = '') {
 
 const accountChip = (a) => el('span', { className: 'chip', textContent: a ? `${a.emoji} ${a.name}` : 'Conto eliminato' });
 
+// Riga dell'elenco: toccandola si apre la modifica (il cestino resta a parte).
+function editableRow(kind, x, ...children) {
+  const li = el('li', { className: `editable${editing?.id === x.id ? ' is-editing' : ''}` }, ...children);
+  li.tabIndex = 0;
+  li.setAttribute('role', 'button');
+  li.setAttribute('aria-label', `Modifica ${kind === 'expense' ? expenseTitle(x) : x.description || KIND_NAME[kind]}`);
+  li.addEventListener('click', (e) => {
+    if (!e.target.closest('.icon-btn')) startEdit(kind, x);
+  });
+  li.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target === li) {
+      e.preventDefault();
+      startEdit(kind, x);
+    }
+  });
+  return li;
+}
+
 function expenseRow(x) {
   const found = x.subId ? findSub(x.subId) : null;
   const account = x.accountId ? findAccount(x.accountId) : null;
@@ -454,10 +472,11 @@ function expenseRow(x) {
     const debtNote = debt && !x.split.settled ? '\nVerrà eliminato anche il debito collegato.' : '';
     if (!confirm(`Eliminare "${title}"?${back}${debtNote}`)) return;
     data.expenses = data.expenses.filter((y) => y.id !== x.id);
+    if (editing?.id === x.id) stopEdit();
     save();
     render();
   });
-  return el('li', {}, dateBadge(x.date),
+  return editableRow('expense', x, dateBadge(x.date),
     el('div', { className: 'expense-main' }, el('div', { className: 'desc', textContent: title }), el('div', { className: 'tags' }, ...tags)),
     amountCell(x), del);
 }
@@ -470,10 +489,11 @@ function incomeRow(x) {
     const note = account ? `\n${euro.format(x.amount)} verranno tolti dal conto "${account.name}".` : '';
     if (!confirm(`Eliminare l'entrata "${title}"?${note}`)) return;
     data.incomes = data.incomes.filter((y) => y.id !== x.id);
+    if (editing?.id === x.id) stopEdit();
     save();
     render();
   });
-  return el('li', {}, dateBadge(x.date, 'in'),
+  return editableRow('income', x, dateBadge(x.date, 'in'),
     el('div', { className: 'expense-main' }, el('div', { className: 'desc', textContent: title }),
       el('div', { className: 'tags' }, el('span', { className: 'chip ok', textContent: 'Entrata' }), accountChip(account))),
     el('span', { className: 'expense-amount in', textContent: `+${euro.format(x.amount)}` }), del);
@@ -488,11 +508,12 @@ function transferRow(x) {
     const note = from && to ? `\n${euro.format(x.amount)} torneranno da "${to.name}" a "${from.name}".` : '';
     if (!confirm(`Annullare il trasferimento "${title}"?${note}`)) return;
     data.transfers = data.transfers.filter((y) => y.id !== x.id);
+    if (editing?.id === x.id) stopEdit();
     save();
     render();
   });
   const route = `${from ? `${from.emoji} ${from.name}` : '?'} → ${to ? `${to.emoji} ${to.name}` : '?'}`;
-  return el('li', {}, dateBadge(x.date, 'move'),
+  return editableRow('transfer', x, dateBadge(x.date, 'move'),
     el('div', { className: 'expense-main' }, el('div', { className: 'desc', textContent: title }),
       el('div', { className: 'tags' }, el('span', { className: 'chip', textContent: route }))),
     el('span', { className: 'expense-amount move', textContent: euro.format(x.amount) }), del);
@@ -655,30 +676,131 @@ for (const b of document.querySelectorAll('#page-statistiche .segmented button')
 $('stats-month').addEventListener('change', renderStats);
 $('stats-year').addEventListener('change', renderStats);
 
+// ---------- Inserimento e modifica dei movimenti ----------
+
+const KIND_KEY = { expense: 'expenses', income: 'incomes', transfer: 'transfers' };
+const KIND_NAME = { expense: 'Spesa', income: 'Entrata', transfer: 'Trasferimento' };
+
+// Movimento in modifica: { kind, id } oppure null se si sta inserendo.
+let editing = null;
+
+function findMovement(kind, id) {
+  return data[KIND_KEY[kind]].find((x) => x.id === id);
+}
+
+// Riempie il modulo con un movimento esistente per modificarlo.
+function startEdit(kind, x) {
+  editing = { kind, id: x.id };
+  if (kind === 'expense') {
+    formAccounts.expense = x.accountId || '';
+    $('expense-area').value = x.subId || '';
+  } else if (kind === 'income') {
+    formAccounts.income = x.accountId;
+  } else {
+    formAccounts.from = x.fromId;
+    formAccounts.to = x.toId;
+  }
+  setFormType(kind);
+  if (kind === 'expense') {
+    // Una spesa con area eliminata: si sceglie di nuovo l'area.
+    $('expense-area').value = findSub(x.subId) ? x.subId : '';
+    updateAreaButton();
+    $('split-on').checked = Boolean(x.split);
+    if (x.split) {
+      splitState.mode = x.split.mode === 'manual' ? 'manual' : 'half';
+      splitState.paid = x.split.paidBy;
+      $('split-mine').value = x.split.mode === 'manual' ? x.split.mine : '';
+    }
+    updateSplitUI();
+  } else {
+    $('split-on').checked = false;
+    updateSplitUI();
+  }
+  $('description').value = x.description || '';
+  $('date').value = x.date;
+  $('amount').value = x.amount;
+  if (kind === 'expense' && x.split) updateSplitSummary();
+  $('edit-title').textContent = `Stai modificando: ${kind === 'expense' ? expenseTitle(x) : x.description || KIND_NAME[kind]}`;
+  $('edit-bar').hidden = false;
+  $('expense-form').classList.add('editing');
+  $('submit-label').textContent = 'Salva modifiche';
+  $('edit-bar').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  render();
+}
+
+// Data di oggi (fuso orario locale) nel formato AAAA-MM-GG.
+function todayIso() {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
+function stopEdit() {
+  editing = null;
+  $('edit-bar').hidden = true;
+  $('expense-form').classList.remove('editing');
+  // Finita la modifica il modulo torna pronto per un nuovo movimento di oggi.
+  $('date').value = todayIso();
+  $('description').value = '';
+  $('amount').value = '';
+  $('split-mine').value = '';
+  $('split-on').checked = false;
+  setFormType(formType);
+}
+
+$('edit-cancel').addEventListener('click', () => {
+  stopEdit();
+  render();
+});
+
+// Salva un nuovo movimento, oppure sostituisce quello in modifica (anche se
+// cambia tipo: es. da spesa a entrata) mantenendone id e ordine.
+function storeMovement(kind, item) {
+  const key = KIND_KEY[kind];
+  if (!editing) {
+    data[key].push({ id: crypto.randomUUID(), ...item, at: Date.now() });
+  } else {
+    const oldKey = KIND_KEY[editing.kind];
+    const old = findMovement(editing.kind, editing.id);
+    const updated = { id: editing.id, ...item, ...(old?.at ? { at: old.at } : {}) };
+    const i = data[key].findIndex((x) => x.id === editing.id);
+    if (oldKey === key && i >= 0) data[key][i] = updated;
+    else {
+      data[oldKey] = data[oldKey].filter((x) => x.id !== editing.id);
+      data[key].push(updated);
+    }
+  }
+  save();
+}
+
 // Dopo il salvataggio: avviso se il movimento è di un altro mese e pulizia dei campi.
 function afterSave(kind) {
+  const wasEditing = Boolean(editing);
   const savedMonth = $('date').value.slice(0, 7);
+  if (wasEditing) stopEdit();
   if (savedMonth !== $('month').value) {
     const [yy, mm] = savedMonth.split('-');
     showToast(`${kind} salvat${kind === 'Trasferimento' ? 'o' : 'a'} a ${MONTH_NAMES[Number(mm) - 1]} ${yy}`, 'Vedi', () => {
       $('month').value = savedMonth;
       render();
     });
+  } else if (wasEditing) {
+    showToast('Modifica salvata', '', () => {});
   }
   $('description').value = '';
   $('amount').value = '';
-  $('amount').focus();
+  if (!wasEditing) $('amount').focus();
   render();
 }
 
 $('expense-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const amount = Math.round(parseFloat($('amount').value) * 100) / 100;
+  const date = $('date').value;
+  const description = $('description').value.trim();
   if (formType === 'income') {
     const accountId = $('expense-account').value;
     if (!findAccount(accountId) || !(amount > 0)) return;
-    data.incomes.push({ id: crypto.randomUUID(), date: $('date').value, description: $('description').value.trim(), accountId, amount, at: Date.now() });
-    save();
+    storeMovement('income', { date, description, accountId, amount });
     saveLast({ ...readLast(), incomeAccountId: accountId });
     afterSave('Entrata');
     return;
@@ -691,8 +813,7 @@ $('expense-form').addEventListener('submit', (e) => {
       showToast('Scegli due conti diversi', '', () => {});
       return;
     }
-    data.transfers.push({ id: crypto.randomUUID(), date: $('date').value, description: $('description').value.trim(), fromId, toId, amount, at: Date.now() });
-    save();
+    storeMovement('transfer', { date, description, fromId, toId, amount });
     saveLast({ ...readLast(), transferFrom: fromId, transferTo: toId });
     afterSave('Trasferimento');
     return;
@@ -713,23 +834,25 @@ $('expense-form').addEventListener('submit', (e) => {
       return;
     }
     split = { mode: splitState.mode, mine, paidBy: splitState.paid, settled: false };
+    // In modifica, un debito già saldato resta saldato se chi ha pagato non cambia.
+    const old = editing && editing.kind === 'expense' ? findMovement('expense', editing.id) : null;
+    if (old?.split?.settled && old.split.paidBy === split.paidBy && debtOf({ amount, split })) {
+      split.settled = true;
+      if (old.split.settledAt) split.settledAt = old.split.settledAt;
+      if (old.split.settleAccountId) split.settleAccountId = old.split.settleAccountId;
+    }
   }
   // Se ha pagato tutto il/la partner, dai miei conti non esce nulla (per ora).
   const accountId = split && split.paidBy === 'partner' ? '' : $('expense-account').value;
-  data.expenses.push({
-    id: crypto.randomUUID(),
-    date: $('date').value,
-    description: $('description').value.trim(),
+  storeMovement('expense', {
+    date,
+    description,
     subId,
     ...(findAccount(accountId) ? { accountId } : {}),
     ...(split ? { split } : {}),
     amount,
-    at: Date.now(),
   });
-  save();
   saveLast({ ...readLast(), subId, accountId });
-  // La pagina resta sul mese che si sta guardando: se la spesa è di un altro
-  // mese lo si segnala, con la possibilità di andarci.
   $('split-mine').value = '';
   $('split-on').checked = false;
   updateSplitUI();

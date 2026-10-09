@@ -19,7 +19,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <!-- Il numero di versione (?v=) va aumentato a ogni modifica di style.css o app.js:
        costringe il browser a scaricare i file nuovi invece di usare quelli in cache. -->
-  <link rel="stylesheet" href="style.css?v=17">
+  <link rel="stylesheet" href="style.css?v=18">
 </head>
 <body>
   <header class="appbar">
@@ -109,6 +109,11 @@
           </div>
         </div>
 
+        <div id="edit-bar" class="edit-bar" hidden>
+          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+          <span id="edit-title" class="edit-title"></span>
+          <button type="button" class="btn ghost" id="edit-cancel">Annulla</button>
+        </div>
         <form id="expense-form" class="card form-grid" data-type="expense">
           <div class="type-switch f-type" role="group" aria-label="Tipo di movimento">
             <button type="button" data-type="expense" aria-pressed="true">
@@ -187,7 +192,10 @@
         </form>
 
         <div class="card">
-          <h2>Movimenti</h2>
+          <div class="list-head">
+            <h2>Movimenti</h2>
+            <span class="hint">Tocca per modificare</span>
+          </div>
           <ul id="rows" class="expense-list"></ul>
           <p id="empty" class="empty">Nessun movimento in questo mese.</p>
         </div>

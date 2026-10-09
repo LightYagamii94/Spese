@@ -15,7 +15,7 @@ Web app per registrare le spese personali. I dati restano solo sul tuo dispositi
   - **Entrata**: soldi in arrivo su un conto (es. stipendio); il saldo del conto sale da solo.
   - **Trasferimento**: soldi spostati da un conto a un altro; un saldo scende e l'altro sale.
 
-  Per il mese scelto mostra le spese, quanto resta del budget, le entrate e quanto hai risparmiato, più l'elenco unico di tutti i movimenti (spese in −, entrate in + verde, trasferimenti in grigio). Budget e statistiche contano solo le spese.
+  Per il mese scelto mostra le spese, quanto resta del budget, le entrate e quanto hai risparmiato, più l'elenco unico di tutti i movimenti (spese in −, entrate in + verde, trasferimenti in grigio). Budget e statistiche contano solo le spese. Toccando un movimento dell'elenco lo si modifica con lo stesso modulo (si può cambiare anche il tipo); saldi, budget e debiti si ricalcolano da soli.
 - **Spese divise**: con l'interruttore "Da dividere con Laura" una spesa si divide 50/50 o indicando la propria quota in €. Si sceglie chi ha pagato: io tutto, ognuno la sua parte, oppure Laura tutto. Nel budget e nelle statistiche conta solo la propria quota; dal conto esce quanto pagato davvero.
 - **Debiti**: quanto Laura ti deve e quanto le devi, con il saldo netto. Ogni debito si segna come saldato, scegliendo su quale conto sono entrati o usciti i soldi, oppure tutti insieme con "Salda tutto"; c'è sempre una conferma prima e si può annullare dopo. Il nome della persona si cambia in fondo alla pagina.
 - **Statistiche**: per mese, anno o in totale, quanto hai speso e quanto resta del budget, complessivamente e per ogni macro area e sotto area. Il budget annuale è quello mensile × 12; il totale è quello mensile × i mesi trascorsi dalla prima spesa.

@@ -12,7 +12,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%235b5bf0'/%3E%3Cpath d='M9 12h14v10a2 2 0 0 1-2 2H11a2 2 0 0 1-2-2z' fill='white'/%3E%3Cpath d='M12 12V10a4 4 0 0 1 8 0v2' stroke='white' stroke-width='2' fill='none'/%3E%3C/svg%3E">
   <!-- Il numero di versione (?v=) va aumentato a ogni modifica di style.css o app.js:
        costringe il browser a scaricare i file nuovi invece di usare quelli in cache. -->
-  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
   <header class="appbar">
@@ -215,6 +215,8 @@
       </div>
     </section>
   </main>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
   <!-- Selettore emoji (uno solo, condiviso da tutti i conti) -->
   <dialog id="emoji-dialog" class="emoji-dialog" aria-labelledby="emoji-title">
     <div class="emoji-dialog-head">
@@ -232,6 +234,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=10"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>

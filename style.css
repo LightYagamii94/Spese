@@ -262,6 +262,38 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
 .tab.active { color: var(--accent); background: var(--accent-soft); }
 .tab.active svg { transform: translateY(-1px) scale(1.06); }
 
+/* Avviso temporaneo sopra la barra in basso */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(88px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 30;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 10px 10px 16px;
+  border-radius: 14px;
+  background: #1f2233;
+  color: #fff;
+  font-weight: 500;
+  box-shadow: var(--shadow-lift);
+  animation: toast-in 0.2s ease-out;
+}
+.toast-action {
+  font: inherit;
+  font-weight: 700;
+  border: none;
+  border-radius: 10px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #c7c4ff;
+  cursor: pointer;
+}
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } }
+
 /* Selettore Mese / Anno / Totale */
 .segmented {
   display: flex;

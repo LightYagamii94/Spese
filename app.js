@@ -387,7 +387,16 @@ $('expense-form').addEventListener('submit', (e) => {
   });
   save();
   saveLast({ subId, accountId });
-  $('month').value = $('date').value.slice(0, 7);
+  // La pagina resta sul mese che si sta guardando: se la spesa è di un altro
+  // mese lo si segnala, con la possibilità di andarci.
+  const expenseMonth = $('date').value.slice(0, 7);
+  if (expenseMonth !== $('month').value) {
+    const [yy, mm] = expenseMonth.split('-');
+    showToast(`Spesa salvata a ${MONTH_NAMES[Number(mm) - 1]} ${yy}`, 'Vedi', () => {
+      $('month').value = expenseMonth;
+      render();
+    });
+  }
   $('description').value = '';
   $('amount').value = '';
   $('description').focus();
@@ -395,6 +404,21 @@ $('expense-form').addEventListener('submit', (e) => {
 });
 
 $('month').addEventListener('change', render);
+
+// Avviso temporaneo in basso, con un pulsante facoltativo.
+let toastTimer;
+function showToast(text, actionLabel, onAction) {
+  const toast = $('toast');
+  const action = el('button', { type: 'button', className: 'toast-action', textContent: actionLabel });
+  action.addEventListener('click', () => {
+    toast.hidden = true;
+    onAction();
+  });
+  toast.replaceChildren(el('span', { textContent: text }), ...(actionLabel ? [action] : []));
+  toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.hidden = true; }, 6000);
+}
 
 // ---------- Macro aree e sotto aree ----------
 

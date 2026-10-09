@@ -451,6 +451,38 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
 
 .app-version { text-align: center; color: var(--muted); font-size: 0.75rem; margin: 18px 0 0; }
 
+/* Pagina obiettivi */
+.goal-hero { display: block; }
+.goal-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.goal-percent { margin: 0 0 6px; font-size: 1.3rem; font-weight: 750; font-variant-numeric: tabular-nums; }
+.goal-track { height: 12px; margin: 14px 0 10px; border-radius: 99px; background: rgba(255, 255, 255, 0.22); overflow: hidden; }
+.goal-bar { height: 100%; width: 0; border-radius: 99px; background: #fff; transition: width 0.4s ease; }
+.goal-hero.reached .goal-bar { background: #bbf7d0; }
+
+.calc-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.calc-list li { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 0; border-top: 1px solid var(--border); align-items: baseline; }
+.calc-list li:first-child { border-top: none; padding-top: 0; }
+.calc-list .what { font-weight: 600; }
+.calc-list .val { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.calc-list .minus .val { color: var(--danger); }
+.calc-list .note { grid-column: 1 / -1; font-size: 0.8rem; color: var(--muted); }
+.calc-list li.result { border-top: 2px solid var(--text); margin-top: 4px; }
+.calc-list li.result .what, .calc-list li.result .val { font-size: 1.1rem; font-weight: 750; }
+
+.forecast-main { margin: 0 0 6px; font-size: 1.05rem; font-weight: 650; }
+.forecast-main b { color: var(--accent); }
+.goal-help { margin: 10px 0 0; font-size: 0.85rem; }
+.goal-help a { color: var(--accent); font-weight: 600; }
+
+/* Interruttore piccolo sui conti: "Escludi dal cassetto" */
+.switch.small { gap: 8px; font-size: 0.82rem; font-weight: 600; color: var(--muted); }
+.switch.small .switch-ui { width: 36px; height: 22px; }
+.switch.small .switch-ui::after { width: 16px; height: 16px; }
+.switch.small input:checked + .switch-ui::after { transform: translateX(14px); }
+.account-list .switch { grid-area: excl; margin-top: 4px; }
+.account-list li.excluded { opacity: 0.85; }
+.account-list li.excluded .money input { color: var(--muted); }
+
 /* Modifica di un movimento */
 .edit-bar {
   display: flex;
@@ -894,7 +926,7 @@ input.rename:focus { background: var(--surface); }
 .account-list li {
   display: grid;
   grid-template-columns: auto auto 1fr auto;
-  grid-template-areas: "handle emoji name del" "handle emoji balance balance";
+  grid-template-areas: "handle emoji name del" "handle emoji balance balance" "handle excl excl excl";
   gap: 6px 12px;
   align-items: center;
   background: var(--surface);
@@ -963,6 +995,8 @@ input.rename:focus { background: var(--surface); }
 }
 
 @media (max-width: 560px) {
+  .tab { font-size: 0.66rem; padding: 7px 2px 6px; gap: 2px; }
+  .bottom-nav { gap: 2px; }
   .account-list { grid-template-columns: 1fr; }
   .actions .btn span { display: none; }
   .actions .btn { padding: 0 11px; }

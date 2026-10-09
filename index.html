@@ -22,7 +22,7 @@
   <meta name="color-scheme" content="light dark">
   <!-- Il numero di versione (?v=) va aumentato a ogni modifica di style.css o app.js:
        costringe il browser a scaricare i file nuovi invece di usare quelli in cache. -->
-  <link rel="stylesheet" href="style.css?v=20">
+  <link rel="stylesheet" href="style.css?v=21">
 </head>
 <body>
   <header class="appbar">
@@ -83,6 +83,10 @@
           <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <span>Debiti</span>
           <span class="tab-badge" id="debt-badge" hidden></span>
+        </a>
+        <a href="#obiettivi" class="tab" data-page="obiettivi">
+          <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg>
+          <span>Obiettivi</span>
         </a>
         <a href="#aree" class="tab" data-page="aree">
           <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="13" y="4" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="4" y="13" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="13" y="13" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
@@ -275,6 +279,42 @@
         </div>
       </div>
 
+      <!-- ===================== OBIETTIVI ===================== -->
+      <div id="page-obiettivi" class="page" hidden>
+        <div class="hero goal-hero">
+          <div class="goal-top">
+            <div>
+              <p class="hero-label">Cassetto</p>
+              <p class="hero-value" id="stash-value">0,00 €</p>
+            </div>
+            <p class="goal-percent" id="goal-percent">0%</p>
+          </div>
+          <div class="goal-track" aria-hidden="true"><div class="goal-bar" id="goal-bar"></div></div>
+          <p class="hero-sub" id="goal-sub"></p>
+        </div>
+
+        <div class="card">
+          <h2>Come è calcolato</h2>
+          <ul class="calc-list" id="stash-calc"></ul>
+        </div>
+
+        <div class="card">
+          <h2>Previsione</h2>
+          <p class="forecast-main" id="forecast-main"></p>
+          <p class="hint" id="forecast-note"></p>
+        </div>
+
+        <div class="card">
+          <label class="field">Obiettivo del cassetto
+            <span class="money">
+              <input type="number" id="goal-target" step="100" min="1" inputmode="decimal">
+              <span class="suffix">€</span>
+            </span>
+          </label>
+          <p class="hint goal-help">Per escludere un conto dal cassetto (es. soldi di altre attività) usa l'interruttore sul conto nella pagina <a href="#conti">Conti</a>.</p>
+        </div>
+      </div>
+
       <!-- ===================== AREE ===================== -->
       <div id="page-aree" class="page" hidden>
         <div class="hero">
@@ -379,6 +419,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=20"></script>
+  <script src="app.js?v=21"></script>
 </body>
 </html>

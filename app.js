@@ -22,10 +22,11 @@ function load() {
       if (!Array.isArray(parsed.incomes)) parsed.incomes = [];
       if (!Array.isArray(parsed.transfers)) parsed.transfers = [];
       if (typeof parsed.partner !== 'string' || !parsed.partner) parsed.partner = 'Laura';
+      if (!parsed.goal || !(parsed.goal.target > 0)) parsed.goal = { target: 10000 };
       return parsed;
     }
   } catch {}
-  return { expenses: [], incomes: [], transfers: [], areas: [], accounts: [], partner: 'Laura' };
+  return { expenses: [], incomes: [], transfers: [], areas: [], accounts: [], partner: 'Laura', goal: { target: 10000 } };
 }
 
 function save() {
@@ -1320,7 +1321,16 @@ function renderAccounts() {
     });
 
     const handle = iconButton('grip', `Trascina per riordinare ${a.name} (o usa le frecce)`, 'handle');
-    const li = el('li', {}, handle, emoji, name, del, wrap);
+    // Conti con soldi non "miei" (es. altre attività): esclusi dal cassetto.
+    const exclInput = el('input', { type: 'checkbox', checked: Boolean(a.excluded) });
+    exclInput.addEventListener('change', () => {
+      if (exclInput.checked) a.excluded = true;
+      else delete a.excluded;
+      save();
+      renderAccounts();
+    });
+    const excl = el('label', { className: 'switch small' }, exclInput, el('span', { className: 'switch-ui', ariaHidden: 'true' }), el('span', { textContent: 'Escludi dal cassetto' }));
+    const li = el('li', { className: a.excluded ? 'excluded' : '' }, handle, emoji, name, del, wrap, excl);
     makeSortable(handle, li, () => data.accounts, a.id, renderAccounts);
     return li;
   });
@@ -1366,6 +1376,7 @@ function mergeAccounts(list) {
         name: a.name,
         emoji: firstGrapheme(String(a.emoji ?? '')) || DEFAULT_ACCOUNT_EMOJI,
         balance: parseAmount(a.balance ?? 0),
+        ...(a.excluded ? { excluded: true } : {}),
       });
       ids.add(a.id);
     }
@@ -1524,6 +1535,102 @@ $('settle-all').addEventListener('click', () => {
   });
 });
 
+// ---------- Obiettivi: il cassetto ----------
+// Cassetto = saldo totale − conti esclusi − budget ancora da spendere nel mese
+// in corso (per sotto area, solo residui positivi) − debiti aperti verso il/la partner.
+
+function stashBreakdown() {
+  const nowYm = $('month').dataset.today;
+  const total = round2(data.accounts.reduce((s, a) => s + currentBalance(a), 0));
+  const excludedAccounts = data.accounts.filter((a) => a.excluded);
+  const excluded = round2(excludedAccounts.reduce((s, a) => s + currentBalance(a), 0));
+
+  const spentBySub = {};
+  for (const x of data.expenses) {
+    if (x.date.startsWith(nowYm) && x.subId) spentBySub[x.subId] = (spentBySub[x.subId] || 0) + myShare(x);
+  }
+  let reserved = 0;
+  for (const m of data.areas) for (const sub of m.subs) reserved += Math.max(0, sub.budget - (spentBySub[sub.id] || 0));
+  reserved = round2(reserved);
+
+  const owe = round2(openDebts().filter((x) => debtOf(x).dir === 'owe').reduce((s, x) => s + debtOf(x).amount, 0));
+  const owed = round2(openDebts().filter((x) => debtOf(x).dir === 'owed').reduce((s, x) => s + debtOf(x).amount, 0));
+  return { nowYm, total, excludedAccounts, excluded, reserved, owe, owed, stash: round2(total - excluded - reserved - owe) };
+}
+
+// Risparmio medio mensile (entrate − mie spese), senza i conti esclusi.
+// Si usano gli ultimi mesi completi (fino a 6); se non ce ne sono ancora, il mese in corso.
+function monthlySavings(nowYm) {
+  const isExcluded = (id) => Boolean(id && findAccount(id)?.excluded);
+  const byMonth = {};
+  const add = (date, v) => { const ym = date.slice(0, 7); byMonth[ym] = (byMonth[ym] || 0) + v; };
+  for (const x of data.incomes) if (!isExcluded(x.accountId)) add(x.date, x.amount);
+  for (const x of data.expenses) if (!isExcluded(x.accountId)) add(x.date, -myShare(x));
+  const months = Object.keys(byMonth).filter((ym) => ym < nowYm).sort().slice(-6);
+  if (months.length) return { avg: round2(months.reduce((s, ym) => s + byMonth[ym], 0) / months.length), months: months.length, partial: false };
+  if (byMonth[nowYm] !== undefined) return { avg: round2(byMonth[nowYm]), months: 0, partial: true };
+  return null;
+}
+
+function renderGoals() {
+  const b = stashBreakdown();
+  const target = data.goal.target;
+  const progress = Math.max(0, Math.min(1, b.stash / target));
+  const reached = b.stash >= target;
+  $('stash-value').textContent = euro.format(b.stash);
+  $('goal-percent').textContent = `${Math.floor(progress * 100)}%`;
+  $('goal-bar').style.width = `${progress * 100}%`;
+  document.querySelector('.goal-hero').classList.toggle('reached', reached);
+  $('goal-sub').textContent = reached
+    ? `🎉 Obiettivo di ${euro.format(target)} raggiunto!`
+    : `Obiettivo ${euro.format(target)} · mancano ${euro.format(target - b.stash)}`;
+  if (document.activeElement !== $('goal-target')) $('goal-target').value = target;
+
+  const monthName = `${MONTH_NAMES[Number(b.nowYm.slice(5, 7)) - 1]}`;
+  const row = (what, val, note, cls = '') => el('li', { className: cls },
+    el('span', { className: 'what', textContent: what }),
+    el('span', { className: 'val', textContent: val }),
+    ...(note ? [el('span', { className: 'note', textContent: note })] : []));
+  const rows = [
+    row('Saldo totale dei conti', euro.format(b.total), data.accounts.length ? '' : 'Nessun conto: aggiungili nella pagina Conti.'),
+    row('Conti esclusi', `− ${euro.format(b.excluded)}`, b.excludedAccounts.length ? b.excludedAccounts.map((a) => `${a.emoji} ${a.name}`).join(', ') : 'Nessun conto escluso', 'minus'),
+    row(`Budget ancora da spendere a ${monthName}`, `− ${euro.format(b.reserved)}`, 'Quanto resta in ogni sotto area questo mese (le aree sforate contano zero)', 'minus'),
+    row(`Debiti verso ${partnerName()}`, `− ${euro.format(b.owe)}`, b.owed ? `Non contati: i ${euro.format(b.owed)} che ${partnerName()} ti deve, finché non li restituisce` : '', 'minus'),
+    row('Cassetto', euro.format(b.stash), '', 'result'),
+  ];
+  $('stash-calc').replaceChildren(...rows);
+
+  const sav = monthlySavings(b.nowYm);
+  let main;
+  let note = '';
+  if (reached) {
+    main = ['Hai già raggiunto l\'obiettivo. Puoi alzarlo qui sotto.'];
+  } else if (!sav) {
+    main = ['Registra entrate e spese per avere una previsione.'];
+  } else if (sav.avg <= 0) {
+    main = ['Al ritmo attuale l\'obiettivo non si avvicina: le spese superano le entrate.'];
+    note = `Media: ${euro.format(sav.avg)} al mese.`;
+  } else {
+    const n = Math.ceil((target - b.stash) / sav.avg);
+    const when = shiftMonth(b.nowYm, n);
+    main = ['Lo raggiungi circa a ', el('b', { textContent: `${MONTH_NAMES[Number(when.slice(5, 7)) - 1]} ${when.slice(0, 4)}` }), ` (tra ${n} ${n === 1 ? 'mese' : 'mesi'})`];
+    note = sav.partial
+      ? `Stima provvisoria basata sul mese in corso (risparmiati finora ${euro.format(sav.avg)}): diventerà più precisa con i mesi.`
+      : `Risparmi in media ${euro.format(sav.avg)} al mese (entrate − tue spese, ${sav.months === 1 ? 'ultimo mese completo' : `ultimi ${sav.months} mesi completi`}, senza i conti esclusi).`;
+  }
+  $('forecast-main').replaceChildren(...main);
+  $('forecast-note').textContent = note;
+}
+
+$('goal-target').addEventListener('change', () => {
+  const v = round2(parseFloat($('goal-target').value));
+  if (v > 0) {
+    data.goal.target = v;
+    save();
+  }
+  renderGoals();
+});
+
 // ---------- Frecce per cambiare mese / anno ----------
 
 function shiftMonth(ym, delta) {
@@ -1632,7 +1739,7 @@ for (const tab of nav.children) {
 
 // ---------- Navigazione ----------
 
-const PAGES = { spese: render, statistiche: renderStats, debiti: renderDebts, aree: renderAreas, conti: renderAccounts };
+const PAGES = { spese: render, statistiche: renderStats, debiti: renderDebts, obiettivi: renderGoals, aree: renderAreas, conti: renderAccounts };
 
 function showPage() {
   const requested = location.hash.slice(1);
@@ -1695,6 +1802,7 @@ $('import').addEventListener('change', async (e) => {
   if (parsed && Array.isArray(parsed.transfers)) mergeById('transfers', parsed.transfers, (x) => typeof x.fromId === 'string' && typeof x.toId === 'string'
     && ({ id: String(x.id), date: x.date, description: String(x.description ?? ''), fromId: x.fromId, toId: x.toId, amount: x.amount, ...(typeof x.at === 'number' ? { at: x.at } : {}) }));
   if (typeof parsed?.partner === 'string' && parsed.partner) data.partner = parsed.partner;
+  if (parsed?.goal?.target > 0) data.goal = { target: Number(parsed.goal.target) };
   save();
   showPage();
   alert(`Importati ${data.expenses.length + data.incomes.length + data.transfers.length - before} movimenti.`);
@@ -1713,7 +1821,7 @@ updateDebtBadge();
 
 // ---------- Versione e aggiornamenti ----------
 // Da aumentare insieme a version.json e ai ?v= di index.html a ogni modifica.
-const APP_VERSION = 20;
+const APP_VERSION = 21;
 $('app-version').textContent = `Versione ${APP_VERSION}`;
 
 // L'app installata può restare aperta in memoria per giorni: quando torna in

@@ -199,6 +199,23 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 
+// Macro aree chiuse a tendina: è solo una preferenza di visualizzazione,
+// per questo non finisce nei dati né nei backup.
+const COLLAPSED_KEY = 'spese.ui.collapsed';
+const collapsed = (() => {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY)) || []);
+  } catch {
+    return new Set();
+  }
+})();
+
+function saveCollapsed() {
+  try {
+    localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed]));
+  } catch {}
+}
+
 function renderAreas() {
   $('macro-empty').hidden = data.areas.length > 0;
   $('budget-total').textContent = euro.format(data.areas.reduce((s, m) => s + macroBudget(m), 0));
@@ -217,13 +234,22 @@ function renderAreas() {
       const extra = m.subs.length ? ` e le sue ${m.subs.length} sotto aree` : '';
       if (!confirm(`Eliminare la macro area "${m.name}"${extra}?`)) return;
       data.areas = data.areas.filter((x) => x.id !== m.id);
+      collapsed.delete(m.id);
+      saveCollapsed();
       save();
       renderAreas();
     });
 
+    const isOpen = !collapsed.has(m.id);
+    const toggle = el('button', { type: 'button', className: 'toggle' });
+    toggle.setAttribute('aria-expanded', String(isOpen));
+    toggle.setAttribute('aria-label', `Mostra o nascondi le sotto aree di ${m.name}`);
+
+    const count = m.subs.length === 1 ? '1 sotto area' : `${m.subs.length} sotto aree`;
     const head = el('div', { className: 'macro-head' },
+      toggle,
       name,
-      el('span', { className: 'macro-budget', textContent: `${euro.format(macroBudget(m))} / mese` }),
+      el('span', { className: 'macro-budget', textContent: `${count} · ${euro.format(macroBudget(m))} / mese` }),
       del);
 
     const subs = m.subs.map((sub) => {
@@ -271,9 +297,20 @@ function renderAreas() {
       document.querySelector(`[data-macro="${m.id}"] .sub-form input`)?.focus();
     });
 
-    const card = el('div', { className: 'card' }, head,
+    const body = el('div', { className: 'macro-body', hidden: !isOpen },
       subs.length ? el('ul', { className: 'sub-list' }, ...subs) : el('p', { className: 'hint', textContent: 'Nessuna sotto area.' }),
       form);
+
+    // Apre/chiude senza ridisegnare, così non si perde quanto scritto nei campi.
+    toggle.addEventListener('click', () => {
+      const open = body.hidden;
+      body.hidden = !open;
+      toggle.setAttribute('aria-expanded', String(open));
+      if (open) collapsed.delete(m.id); else collapsed.add(m.id);
+      saveCollapsed();
+    });
+
+    const card = el('div', { className: 'card' }, head, body);
     card.dataset.macro = m.id;
     return card;
   });

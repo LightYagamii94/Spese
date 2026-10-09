@@ -155,8 +155,32 @@ th { font-size: 0.85rem; color: var(--muted); font-weight: 600; }
   flex-wrap: wrap;
   gap: 8px 12px;
   align-items: center;
-  margin-bottom: 12px;
 }
+.macro-body { margin-top: 12px; }
+
+.toggle {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+/* Freccia disegnata: punta a destra se chiusa, in basso se aperta. */
+.toggle::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--text);
+  border-bottom: 2px solid var(--text);
+  transform: translateX(-2px) rotate(-45deg);
+  transition: transform 0.15s;
+}
+.toggle[aria-expanded="true"]::before { transform: translateY(-2px) rotate(45deg); }
+
 .macro-head .name {
   flex: 1 1 160px;
   font-size: 1.1rem;

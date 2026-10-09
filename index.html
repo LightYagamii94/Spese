@@ -19,7 +19,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <!-- Il numero di versione (?v=) va aumentato a ogni modifica di style.css o app.js:
        costringe il browser a scaricare i file nuovi invece di usare quelli in cache. -->
-  <link rel="stylesheet" href="style.css?v=15">
+  <link rel="stylesheet" href="style.css?v=16">
 </head>
 <body>
   <header class="appbar">
@@ -113,9 +113,12 @@
           <label class="field f-desc">Descrizione
             <input type="text" id="description" maxlength="120" placeholder="Facoltativa">
           </label>
-          <label class="field f-area">Area
-            <select id="expense-area" required></select>
-          </label>
+          <div class="field f-area">
+            <span id="area-label">Area</span>
+            <!-- Selettore con le macro aree a tendina; il select nascosto tiene il valore -->
+            <button type="button" id="area-btn" class="picker-btn" aria-labelledby="area-label area-btn" aria-haspopup="dialog"></button>
+            <select id="expense-area" class="sr-only" tabindex="-1" aria-hidden="true"></select>
+          </div>
           <label class="field f-acct">Pagata con
             <select id="expense-account"></select>
           </label>
@@ -305,6 +308,17 @@
     </section>
   </main>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <!-- Scelta dell'area di una spesa: macro aree a tendina -->
+  <dialog id="area-dialog" class="sheet" aria-labelledby="area-dialog-title">
+    <div class="emoji-dialog-head">
+      <h2 id="area-dialog-title">Scegli l'area</h2>
+      <button type="button" class="icon-btn" id="area-close" aria-label="Chiudi">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div id="area-list" class="area-list"></div>
+  </dialog>
 
   <!-- Conferma prima di segnare un debito come saldato -->
   <dialog id="settle-dialog" class="sheet" aria-labelledby="settle-title">

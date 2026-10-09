@@ -247,6 +247,7 @@ function fillExpenseSelects() {
     .map((m) => el('optgroup', { label: m.name }, ...m.subs.map((sub) => el('option', { value: sub.id, textContent: `${m.name} › ${sub.name}` }))));
   areaSel.replaceChildren(el('option', { value: '', textContent: 'Scegli un\'area…', disabled: true }), ...groups);
   areaSel.value = findSub(prevArea) ? prevArea : '';
+  updateAreaButton();
 
   const acctSel = $('expense-account');
   const prevAcct = acctSel.dataset.touched ? acctSel.value : last.accountId ?? acctSel.value;
@@ -261,6 +262,61 @@ function fillExpenseSelects() {
 }
 
 $('expense-account').addEventListener('change', (e) => { e.target.dataset.touched = '1'; });
+
+// ---------- Selettore dell'area (macro aree a tendina) ----------
+
+function updateAreaButton() {
+  const found = findSub($('expense-area').value);
+  $('area-btn').replaceChildren(...(found
+    ? [el('span', { className: 'macro', textContent: found.macro.name }), el('span', { className: 'sub', textContent: found.sub.name })]
+    : [el('span', { className: 'placeholder', textContent: 'Scegli un\'area…' })]));
+}
+
+function chooseArea(subId) {
+  $('expense-area').value = subId;
+  updateAreaButton();
+  $('area-dialog').close();
+  $('area-btn').focus();
+}
+
+function openAreaPicker() {
+  const current = $('expense-area').value;
+  const macros = data.areas.filter((m) => m.subs.length);
+  const groups = macros.map((m) => {
+    // Aperta solo la macro area della scelta attuale (o l'unica presente).
+    const open = macros.length === 1 || m.subs.some((x) => x.id === current);
+    const dot = el('span', { className: 'dot' });
+    dot.style.background = AVATAR_COLORS[data.areas.indexOf(m) % AVATAR_COLORS.length];
+    const head = el('button', { type: 'button', className: 'area-group-head' },
+      dot,
+      el('span', { className: 'name', textContent: m.name }),
+      el('span', { className: 'count', textContent: String(m.subs.length) }),
+      el('span', { className: 'chevron' }));
+    head.setAttribute('aria-expanded', String(open));
+    const subs = el('div', { className: 'area-subs', hidden: !open }, ...m.subs.map((sub) => {
+      const b = el('button', { type: 'button', className: 'area-sub', textContent: sub.name });
+      b.setAttribute('role', 'menuitemradio');
+      b.setAttribute('aria-checked', String(sub.id === current));
+      b.addEventListener('click', () => chooseArea(sub.id));
+      return b;
+    }));
+    head.addEventListener('click', () => {
+      subs.hidden = !subs.hidden;
+      head.setAttribute('aria-expanded', String(!subs.hidden));
+    });
+    return el('div', { className: 'area-group' }, head, subs);
+  });
+  $('area-list').replaceChildren(...groups);
+  $('area-dialog').showModal();
+  ($('area-list').querySelector('[aria-checked="true"]') || $('area-list').querySelector('button'))?.focus();
+}
+
+$('area-btn').addEventListener('click', openAreaPicker);
+$('expense-area').addEventListener('change', updateAreaButton);
+$('area-close').addEventListener('click', () => $('area-dialog').close());
+$('area-dialog').addEventListener('click', (e) => {
+  if (e.target === $('area-dialog')) $('area-dialog').close();
+});
 
 const MONTHS = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
 
@@ -485,7 +541,11 @@ $('expense-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const amount = Math.round(parseFloat($('amount').value) * 100) / 100;
   const subId = $('expense-area').value;
-  if (!(amount > 0) || !findSub(subId)) return;
+  if (!findSub(subId)) {
+    openAreaPicker();
+    return;
+  }
+  if (!(amount > 0)) return;
   // La descrizione è facoltativa: se vuota, nell'elenco si vede il nome della sotto area.
   let split = null;
   if ($('split-on').checked) {

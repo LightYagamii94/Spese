@@ -248,34 +248,41 @@ function saveCollapsed() {
 
 const AVATAR_COLORS = ['#5b5bf0', '#8b5cf6', '#ec4899', '#f97316', '#10b981', '#0ea5e9', '#eab308', '#ef4444'];
 
-// Trascinamento con il "manico" a sinistra di ogni riga. Usa i pointer events,
-// così funziona sia col mouse sia col dito su telefono e tablet.
-function makeDraggable(handle, li, onDrop) {
+// Trascinamento con il "manico" di un elemento (riga, scheda...). Usa i pointer
+// events, così funziona sia col mouse sia col dito su telefono e tablet, e
+// funziona sia con elenchi verticali sia con griglie a più colonne.
+function makeDraggable(handle, item, onDrop) {
   handle.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
     e.preventDefault();
-    const list = li.parentElement;
+    const list = item.parentElement;
     const before = [...list.children].map((c) => c.dataset.id).join();
     handle.setPointerCapture(e.pointerId);
-    li.classList.add('dragging');
+    item.classList.add('dragging');
     document.body.classList.add('is-dragging');
 
-    const mid = (c) => {
-      const r = c.getBoundingClientRect();
-      return r.top + r.height / 2;
-    };
-    // Si spostano le righe vicine e non quella trascinata: staccarla dalla
-    // pagina, anche per un istante, farebbe perdere il puntatore al browser.
     const move = (ev) => {
-      let prev = li.previousElementSibling;
-      while (prev && ev.clientY < mid(prev)) {
-        li.after(prev);
-        prev = li.previousElementSibling;
-      }
-      let next = li.nextElementSibling;
-      while (next && ev.clientY > mid(next)) {
-        li.before(next);
-        next = li.nextElementSibling;
+      // Elemento dell'elenco che si trova sotto il puntatore.
+      let over = document.elementFromPoint(ev.clientX, ev.clientY);
+      while (over && over.parentElement !== list) over = over.parentElement;
+      if (over && over !== item) {
+        const kids = [...list.children];
+        const from = kids.indexOf(item);
+        const to = kids.indexOf(over);
+        // Si scambia solo dopo aver superato la metà dell'elemento sorvolato
+        // (in orizzontale se sono sulla stessa riga della griglia), così
+        // elementi di altezze diverse non "rimbalzano" avanti e indietro.
+        const r = over.getBoundingClientRect();
+        const sameRow = Math.abs(r.top - item.getBoundingClientRect().top) < r.height / 2;
+        const pos = sameRow ? ev.clientX : ev.clientY;
+        const half = sameRow ? r.left + r.width / 2 : r.top + r.height / 2;
+        // Si spostano gli elementi vicini e non quello trascinato: staccarlo dalla
+        // pagina, anche per un istante, farebbe perdere il puntatore al browser.
+        if (to > from && pos > half) {
+          for (let k = from + 1; k <= to; k++) item.before(kids[k]);
+        } else if (to < from && pos < half) {
+          for (let k = from - 1; k >= to; k--) item.after(kids[k]);
+        }
       }
       // Scorre la pagina se si trascina vicino ai bordi dello schermo.
       if (ev.clientY < 80) window.scrollBy(0, -12);
@@ -285,7 +292,7 @@ function makeDraggable(handle, li, onDrop) {
       handle.removeEventListener('pointermove', move);
       handle.removeEventListener('pointerup', end);
       handle.removeEventListener('pointercancel', end);
-      li.classList.remove('dragging');
+      item.classList.remove('dragging');
       document.body.classList.remove('is-dragging');
       const ids = [...list.children].map((c) => c.dataset.id);
       if (ids.join() !== before) onDrop(ids);
@@ -293,6 +300,30 @@ function makeDraggable(handle, li, onDrop) {
     handle.addEventListener('pointermove', move);
     handle.addEventListener('pointerup', end);
     handle.addEventListener('pointercancel', end);
+  });
+}
+
+// Collega a un manico sia il trascinamento sia lo spostamento con le frecce
+// su/giù (alternativa da tastiera). `getList` restituisce l'array da riordinare.
+function makeSortable(handle, item, getList, id, rerender) {
+  item.dataset.id = id;
+  makeDraggable(handle, item, (ids) => {
+    getList().sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+    save();
+    rerender();
+  });
+  handle.addEventListener('keydown', (e) => {
+    const step = e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : 0;
+    if (!step) return;
+    const list = getList();
+    const i = list.findIndex((x) => x.id === id);
+    const j = i + step;
+    if (i < 0 || j < 0 || j >= list.length) return;
+    e.preventDefault();
+    [list[i], list[j]] = [list[j], list[i]];
+    save();
+    rerender();
+    document.querySelector(`[data-id="${id}"] .handle`)?.focus();
   });
 }
 
@@ -331,14 +362,16 @@ function renderAreas() {
 
     const count = m.subs.length === 1 ? '1 sotto area' : `${m.subs.length} sotto aree`;
     const total = `${euro.format(macroBudget(m))} / mese`;
+    const macroHandle = iconButton('grip', `Trascina per riordinare ${m.name} (o usa le frecce su e giù)`, 'handle');
     const head = el('div', { className: 'macro-head' },
+      macroHandle,
       toggle,
       avatar,
       el('div', { className: 'macro-title' }, name, el('div', { className: 'macro-meta', textContent: `${count} · ${total}` })),
       el('span', { className: 'macro-total', textContent: euro.format(macroBudget(m)) }),
       del);
 
-    const subs = m.subs.map((sub, i) => {
+    const subs = m.subs.map((sub) => {
       const handle = iconButton('grip', `Trascina per riordinare ${sub.name} (o usa le frecce su e giù)`, 'handle');
 
       const subName = el('input', { className: 'rename', value: sub.name, maxLength: 40, required: true });
@@ -366,25 +399,7 @@ function renderAreas() {
       });
 
       const li = el('li', {}, handle, subName, budget.wrap, subDel);
-      li.dataset.id = sub.id;
-
-      makeDraggable(handle, li, (ids) => {
-        m.subs.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
-        save();
-        renderAreas();
-      });
-
-      // Alternativa da tastiera: frecce su/giù sul manico.
-      handle.addEventListener('keydown', (e) => {
-        const j = e.key === 'ArrowUp' ? i - 1 : e.key === 'ArrowDown' ? i + 1 : -1;
-        if (j < 0 || j >= m.subs.length) return;
-        e.preventDefault();
-        [m.subs[i], m.subs[j]] = [m.subs[j], m.subs[i]];
-        save();
-        renderAreas();
-        document.querySelector(`li[data-id="${sub.id}"] .handle`)?.focus();
-      });
-
+      makeSortable(handle, li, () => m.subs, sub.id, renderAreas);
       return li;
     });
 
@@ -420,6 +435,7 @@ function renderAreas() {
 
     const card = el('div', { className: 'card' }, head, body);
     card.dataset.macro = m.id;
+    makeSortable(macroHandle, card, () => data.areas, m.id, renderAreas);
     return card;
   });
   $('macro-list').replaceChildren(...cards);
@@ -569,7 +585,10 @@ function renderAccounts() {
       renderAccounts();
     });
 
-    return el('li', {}, emoji, name, del, wrap);
+    const handle = iconButton('grip', `Trascina per riordinare ${a.name} (o usa le frecce)`, 'handle');
+    const li = el('li', {}, handle, emoji, name, del, wrap);
+    makeSortable(handle, li, () => data.accounts, a.id, renderAccounts);
+    return li;
   });
   $('account-list').replaceChildren(...items);
 }

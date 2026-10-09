@@ -11,8 +11,8 @@ Web app per registrare le spese personali. I dati restano solo sul tuo dispositi
 ## Sezioni
 
 - **Spese**: registrazione delle spese del mese, totale e ripartizione per categoria.
-- **Aree e budget**: macro aree (es. Casa) con sotto aree (es. Mutuo, Corrente) e relativo budget mensile; le sotto aree si riordinano trascinandole.
-- **Conti**: i tuoi conti (corrente, contanti, carte, risparmi…) con emoji, nome e saldo, e il saldo totale.
+- **Aree e budget**: macro aree (es. Casa) con sotto aree (es. Mutuo, Corrente) e relativo budget mensile; macro aree e sotto aree si riordinano trascinandole.
+- **Conti**: i tuoi conti (corrente, contanti, carte, risparmi…) con emoji, nome e saldo, e il saldo totale; si riordinano trascinandoli.
 
 ## Backup e più dispositivi
 

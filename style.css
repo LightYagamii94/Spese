@@ -335,7 +335,7 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
 .macro-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   padding: 14px 12px;
 }
 .avatar {
@@ -347,9 +347,9 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
   color: #fff;
   flex: none;
 }
-.macro-title { flex: 1; min-width: 0; }
+.macro-title { flex: 1; min-width: 0; margin-left: 4px; }
 .macro-title input.rename { font-weight: 700; font-size: 1.02rem; text-transform: uppercase; letter-spacing: 0.02em; }
-.macro-meta { font-size: 0.8rem; color: var(--muted); padding-left: 9px; }
+.macro-meta { font-size: 0.8rem; color: var(--muted); padding-left: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .macro-total { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 .toggle::before {
@@ -375,13 +375,14 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
   background: var(--surface-2);
 }
 .sub-list li + li { margin-top: 2px; }
-.sub-list li.dragging {
+/* Elemento che si sta trascinando (sotto area, macro area o conto) */
+.dragging {
   position: relative;
   z-index: 2;
-  background: var(--surface);
-  box-shadow: var(--shadow-lift);
+  box-shadow: var(--shadow-lift) !important;
   transform: scale(1.02);
 }
+.sub-list li.dragging { background: var(--surface); }
 .sub-list .money input { background: var(--surface); }
 
 .handle {
@@ -454,8 +455,8 @@ input.rename:focus { background: var(--surface); }
 }
 .account-list li {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  grid-template-areas: "emoji name del" "emoji balance balance";
+  grid-template-columns: auto auto 1fr auto;
+  grid-template-areas: "handle emoji name del" "handle emoji balance balance";
   gap: 6px 12px;
   align-items: center;
   background: var(--surface);
@@ -466,7 +467,8 @@ input.rename:focus { background: var(--surface); }
 }
 .account-list .emoji-btn { grid-area: emoji; }
 .account-list .rename { grid-area: name; font-weight: 700; font-size: 1.02rem; padding: 0 12px; }
-.account-list .icon-btn { grid-area: del; }
+.account-list .icon-btn.danger { grid-area: del; }
+.account-list .handle { grid-area: handle; margin-left: -6px; margin-right: -6px; }
 .account-list .money { grid-area: balance; }
 .account-list .money input { font-size: 1.15rem; font-weight: 700; text-align: left; padding-left: 12px; }
 .account-list .money.negative input { color: var(--danger); }
@@ -535,6 +537,9 @@ input.rename:focus { background: var(--surface); }
   .hero-value { font-size: 1.8rem; }
   .add-macro { flex-direction: column; align-items: stretch; }
   .macro-total { display: none; }
+  .macro-head { gap: 2px; padding: 12px 8px; }
+  .macro-head .icon-btn { width: 30px; }
+  .macro-head .avatar { width: 34px; height: 34px; font-size: 0.95rem; border-radius: 10px; }
   .sub-list li { grid-template-columns: auto 1fr 104px auto; gap: 4px; }
   .sub-form { grid-template-columns: 1fr auto; }
   .sub-form input:first-child { grid-column: 1 / -1; }

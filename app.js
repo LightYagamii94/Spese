@@ -194,6 +194,10 @@ const round2 = (n) => Math.round(n * 100) / 100;
 const partnerName = () => data.partner || 'Laura';
 // Quota a carico mio: conta nel budget e nelle statistiche.
 const myShare = (x) => (x.split ? x.split.mine : x.amount);
+// Conti con l'interruttore "Spese fuori dalle aree" (es. soldi di un'altra attività):
+// le spese pagate con questi conti scalano solo il saldo del conto, non budget e statistiche.
+const isOutsideAccount = (id) => Boolean(id && findAccount(id)?.noAreas);
+const outsideAreas = (x) => isOutsideAccount(x.accountId);
 const partnerShare = (x) => (x.split ? round2(x.amount - x.split.mine) : 0);
 
 // Debito generato da una spesa divisa: "owed" = il/la partner mi deve,
@@ -356,7 +360,7 @@ function fillExpenseSelects() {
   // Cosa serve per poter registrare il movimento scelto.
   const notice = $('no-areas');
   let missing = null;
-  if (formType === 'expense' && !groups.length) missing = ['Per registrare una spesa crea prima almeno una macro area con una sotto area nella pagina ', 'Aree', '#aree'];
+  if (formType === 'expense' && !groups.length && !isOutsideAccount(acctSel.value)) missing = ['Per registrare una spesa crea prima almeno una macro area con una sotto area nella pagina ', 'Aree', '#aree'];
   if (formType === 'income' && !accounts.length) missing = ['Per registrare un\'entrata crea prima un conto nella pagina ', 'Conti', '#conti'];
   if (formType === 'transfer' && accounts.length < 2) missing = ['Per trasferire soldi servono almeno due conti: creali nella pagina ', 'Conti', '#conti'];
   notice.hidden = !missing;
@@ -364,6 +368,15 @@ function fillExpenseSelects() {
   for (const c of $('expense-form').querySelectorAll('input, select, button')) {
     if (!c.closest('.type-switch')) c.disabled = Boolean(missing);
   }
+  updateOutsideArea();
+}
+
+// Spesa pagata con un conto "fuori dalle aree": il campo Area lascia il posto a una nota.
+function updateOutsideArea() {
+  const form = $('expense-form');
+  const acc = formType === 'expense' && isOutsideAccount($('expense-account').value) ? findAccount($('expense-account').value) : null;
+  form.toggleAttribute('data-noarea', Boolean(acc));
+  if (acc) $('noarea-account').textContent = `${acc.emoji} ${acc.name}`;
 }
 
 function setFormType(type) {
@@ -384,6 +397,7 @@ for (const b of document.querySelectorAll('.type-switch button')) {
 
 $('expense-account').addEventListener('change', (e) => {
   formAccounts[{ expense: 'expense', income: 'income', transfer: 'from' }[formType]] = e.target.value;
+  if (formType === 'expense') fillExpenseSelects();
   // Nel trasferimento i due conti devono essere diversi.
   if (formType === 'transfer' && $('transfer-to').value === e.target.value) {
     $('transfer-to').value = data.accounts.find((a) => a.id !== e.target.value)?.id ?? '';
@@ -510,8 +524,10 @@ function splitChips(x) {
 // Nome da mostrare per una spesa: la descrizione, oppure (se vuota) la sotto area.
 function expenseTitle(x) {
   if (x.description) return x.description;
-  const found = x.subId ? findSub(x.subId) : null;
-  return found ? found.sub.name : x.category || 'Spesa';
+  const found = x.subId && !outsideAreas(x) ? findSub(x.subId) : null;
+  if (found) return found.sub.name;
+  if (outsideAreas(x)) return `Spesa ${findAccount(x.accountId).name}`;
+  return x.category || 'Spesa';
 }
 
 function dateBadge(date, kind = '') {
@@ -543,10 +559,11 @@ function expenseRow(x) {
   const found = x.subId ? findSub(x.subId) : null;
   const account = x.accountId ? findAccount(x.accountId) : null;
   const tags = [];
-  if (found) tags.push(el('span', { className: 'chip', textContent: `${found.macro.name} › ${found.sub.name}` }));
+  if (outsideAreas(x)) tags.push(el('span', { className: 'chip muted', textContent: 'Fuori dalle aree' }));
+  else if (found) tags.push(el('span', { className: 'chip', textContent: `${found.macro.name} › ${found.sub.name}` }));
   else if (x.category) tags.push(el('span', { className: 'chip muted', textContent: x.category }));
   else tags.push(el('span', { className: 'chip muted', textContent: x.subId ? 'Area eliminata' : 'Senza area' }));
-  if (account && !(x.split && x.split.paidBy === 'partner')) tags.push(accountChip(account));
+  if (account && (!(x.split && x.split.paidBy === 'partner') || outsideAreas(x))) tags.push(accountChip(account));
   tags.push(...splitChips(x));
 
   const title = expenseTitle(x);
@@ -614,7 +631,7 @@ function render() {
 
   renderMovementList(month);
 
-  const total = round2(expenses.reduce((s, x) => s + myShare(x), 0));
+  const total = round2(expenses.filter((x) => !outsideAreas(x)).reduce((s, x) => s + myShare(x), 0));
   $('total').textContent = euro.format(total);
 
   const totalBudget = data.areas.reduce((s, m) => s + macroBudget(m), 0);
@@ -906,7 +923,7 @@ function renderStats() {
   let unassigned = 0;
   let spentTotal = 0;
   for (const x of data.expenses) {
-    if (!inPeriod(x)) continue;
+    if (!inPeriod(x) || outsideAreas(x)) continue;
     const mine = myShare(x);
     spentTotal += mine;
     if (x.subId && findSub(x.subId)) spentBySub[x.subId] = (spentBySub[x.subId] || 0) + mine;
@@ -1109,8 +1126,9 @@ $('expense-form').addEventListener('submit', (e) => {
     afterSave('Trasferimento');
     return;
   }
-  const subId = $('expense-area').value;
-  if (!findSub(subId)) {
+  const outside = isOutsideAccount($('expense-account').value);
+  const subId = outside ? '' : $('expense-area').value;
+  if (!outside && !findSub(subId)) {
     openAreaPicker();
     return;
   }
@@ -1133,17 +1151,18 @@ $('expense-form').addEventListener('submit', (e) => {
       if (old.split.settleAccountId) split.settleAccountId = old.split.settleAccountId;
     }
   }
-  // Se ha pagato tutto il/la partner, dai miei conti non esce nulla (per ora).
-  const accountId = split && split.paidBy === 'partner' ? '' : $('expense-account').value;
+  // Se ha pagato tutto il/la partner, dai miei conti non esce nulla (per ora),
+  // tranne per i conti fuori dalle aree, che devono restare collegati alla spesa.
+  const accountId = split && split.paidBy === 'partner' && !outside ? '' : $('expense-account').value;
   storeMovement('expense', {
     date,
     description,
-    subId,
+    ...(subId ? { subId } : {}),
     ...(findAccount(accountId) ? { accountId } : {}),
     ...(split ? { split } : {}),
     amount,
   });
-  saveLast({ ...readLast(), subId, accountId });
+  saveLast({ ...readLast(), ...(subId ? { subId } : {}), accountId });
   $('split-mine').value = '';
   $('split-on').checked = false;
   updateSplitUI();
@@ -1620,7 +1639,16 @@ function renderAccounts() {
       renderAccounts();
     });
     const excl = el('label', { className: 'switch small' }, exclInput, el('span', { className: 'switch-ui', ariaHidden: 'true' }), el('span', { textContent: 'Escludi dal cassetto' }));
-    const li = el('li', { className: a.excluded ? 'excluded' : '' }, handle, emoji, name, del, wrap, excl);
+    // Spese pagate con questo conto: niente area, solo il saldo del conto scende.
+    const outInput = el('input', { type: 'checkbox', checked: Boolean(a.noAreas) });
+    outInput.addEventListener('change', () => {
+      if (outInput.checked) a.noAreas = true;
+      else delete a.noAreas;
+      save();
+      renderAccounts();
+    });
+    const out = el('label', { className: 'switch small' }, outInput, el('span', { className: 'switch-ui', ariaHidden: 'true' }), el('span', { textContent: 'Spese fuori dalle aree' }));
+    const li = el('li', { className: a.excluded ? 'excluded' : '' }, handle, emoji, name, del, wrap, el('div', { className: 'account-switches' }, excl, out));
     makeSortable(handle, li, () => data.accounts, a.id, renderAccounts);
     return li;
   });
@@ -1667,6 +1695,7 @@ function mergeAccounts(list) {
         emoji: firstGrapheme(String(a.emoji ?? '')) || DEFAULT_ACCOUNT_EMOJI,
         balance: parseAmount(a.balance ?? 0),
         ...(a.excluded ? { excluded: true } : {}),
+        ...(a.noAreas ? { noAreas: true } : {}),
       });
       ids.add(a.id);
     }
@@ -1983,7 +2012,7 @@ function stashBreakdown() {
 
   const spentBySub = {};
   for (const x of data.expenses) {
-    if (x.date.startsWith(nowYm) && x.subId) spentBySub[x.subId] = (spentBySub[x.subId] || 0) + myShare(x);
+    if (x.date.startsWith(nowYm) && x.subId && !outsideAreas(x)) spentBySub[x.subId] = (spentBySub[x.subId] || 0) + myShare(x);
   }
   let reserved = 0;
   for (const m of data.areas) for (const sub of m.subs) reserved += Math.max(0, sub.budget - (spentBySub[sub.id] || 0));
@@ -2570,7 +2599,7 @@ updateDebtBadge();
 
 // ---------- Versione e aggiornamenti ----------
 // Da aumentare insieme a version.json e ai ?v= di index.html a ogni modifica.
-const APP_VERSION = 27;
+const APP_VERSION = 28;
 $('app-version').textContent = `Versione ${APP_VERSION}`;
 
 // L'app installata può restare aperta in memoria per giorni: quando torna in

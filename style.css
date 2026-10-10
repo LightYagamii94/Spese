@@ -523,7 +523,7 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
 .switch.small .switch-ui { width: 36px; height: 22px; }
 .switch.small .switch-ui::after { width: 16px; height: 16px; }
 .switch.small input:checked + .switch-ui::after { transform: translateX(14px); }
-.account-list .switch { grid-area: excl; margin-top: 4px; }
+.account-switches { grid-area: excl; display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 4px; }
 .account-list li.excluded { opacity: 0.85; }
 .account-list li.excluded .money input { color: var(--muted); }
 
@@ -597,6 +597,11 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
 .expense-amount.move { color: var(--muted); font-weight: 600; }
 .f-desc { grid-area: desc; }
 .f-area { grid-area: area; }
+.f-noarea { grid-area: area; display: none; }
+.noarea-note { margin: 0; padding: 11px 14px; border-radius: var(--radius-sm); background: var(--surface-2); color: var(--muted); font-size: 0.88rem; }
+.noarea-note b { color: var(--text); }
+#expense-form[data-type="expense"][data-noarea] .f-area { display: none; }
+#expense-form[data-type="expense"][data-noarea] .f-noarea { display: grid; }
 .f-acct { grid-area: acct; }
 .f-date { grid-area: date; }
 .f-amount { grid-area: amount; }

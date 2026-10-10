@@ -22,7 +22,7 @@
   <meta name="color-scheme" content="light dark">
   <!-- Il numero di versione (?v=) va aumentato a ogni modifica di style.css o app.js:
        costringe il browser a scaricare i file nuovi invece di usare quelli in cache. -->
-  <link rel="stylesheet" href="style.css?v=27">
+  <link rel="stylesheet" href="style.css?v=28">
 </head>
 <body>
   <header class="appbar">
@@ -144,6 +144,10 @@
             <!-- Selettore con le macro aree a tendina; il select nascosto tiene il valore -->
             <button type="button" id="area-btn" class="picker-btn" aria-labelledby="area-label area-btn" aria-haspopup="dialog"></button>
             <select id="expense-area" class="sr-only" tabindex="-1" aria-hidden="true"></select>
+          </div>
+          <div class="field f-noarea">
+            <span>Area</span>
+            <p class="noarea-note">Pagata con <b id="noarea-account"></b>: scala solo il saldo del conto, nessuna area.</p>
           </div>
           <label class="field f-acct"><span id="acct-label">Pagata con</span>
             <select id="expense-account"></select>
@@ -563,6 +567,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=27"></script>
+  <script src="app.js?v=28"></script>
 </body>
 </html>

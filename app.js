@@ -1078,7 +1078,8 @@ function afterSave(kind) {
   }
   $('description').value = '';
   $('amount').value = '';
-  if (!wasEditing) $('amount').focus();
+  // Chiude la tastiera del telefono dopo il salvataggio.
+  document.activeElement?.blur();
   render();
 }
 
@@ -2569,7 +2570,7 @@ updateDebtBadge();
 
 // ---------- Versione e aggiornamenti ----------
 // Da aumentare insieme a version.json e ai ?v= di index.html a ogni modifica.
-const APP_VERSION = 26;
+const APP_VERSION = 27;
 $('app-version').textContent = `Versione ${APP_VERSION}`;
 
 // L'app installata può restare aperta in memoria per giorni: quando torna in

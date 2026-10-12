@@ -884,8 +884,12 @@ const ymOf = (i) => `${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0
 // Quello che non spendi resta disponibile nei mesi dopo; uno sforamento si recupera nei mesi dopo.
 // Si parte dal mese della prima spesa. Una sotto area creata dopo parte dal mese di creazione
 // (since) e una modifica del budget vale dal mese in cui la fai (prev = budget dei mesi prima).
+// I mesi fino a histUntil usano lo storico importato dal foglio Excel (hist = accumulo di ogni mese).
+
+const YM_RE = /^\d{4}-\d{2}$/;
 
 function budgetAt(sub, ym) {
+  if (sub.histUntil && ym <= sub.histUntil) return sub.hist?.[ym] || 0;
   if (sub.since && ym < sub.since) return 0;
   for (const p of sub.prev || []) if (ym < p.to) return p.amount;
   return sub.budget;
@@ -913,6 +917,10 @@ function ledger() {
   };
   for (const x of data.expenses) if (x.subId && !outsideAreas(x)) add(spent, x.subId, x.date.slice(0, 7), myShare(x));
   for (const e of data.salaryExtras) add(extra, e.subId, e.date.slice(0, 7), e.amount);
+  // Lo storico dei budget può iniziare prima della prima spesa.
+  for (const m of data.areas) for (const sub of m.subs) {
+    for (const ym of Object.keys(sub.hist || {})) if (!first || ym < first) first = ym;
+  }
   return (ledgerCache = { first, spent, extra });
 }
 
@@ -1607,8 +1615,10 @@ function mergeAreas(list) {
       if (sub && sub.id && !ids.has(sub.id) && typeof sub.name === 'string') {
         const ym = (v) => typeof v === 'string' && /^\d{4}-\d{2}$/.test(v);
         const prev = Array.isArray(sub.prev) ? sub.prev.filter((p) => p && ym(p.to)).map((p) => ({ to: p.to, amount: parseBudget(p.amount ?? 0) })) : [];
+        const hist = ym(sub.histUntil) ? cleanHist(sub.hist, sub.histUntil) : null;
         target.subs.push({ id: String(sub.id), name: sub.name, budget: parseBudget(sub.budget ?? 0),
-          ...(ym(sub.since) ? { since: sub.since } : {}), ...(prev.length ? { prev } : {}) });
+          ...(ym(sub.since) ? { since: sub.since } : {}), ...(prev.length ? { prev } : {}),
+          ...(hist ? { hist, histUntil: sub.histUntil } : {}) });
         ids.add(sub.id);
       }
     }
@@ -1778,6 +1788,14 @@ $('account-form').addEventListener('submit', (e) => {
   $('account-emoji').textContent = newAccountEmoji;
   renderAccounts();
 });
+
+// Storico dei budget mese per mese (accumulo del foglio Excel), solo valori validi.
+function cleanHist(months, until) {
+  if (!months || typeof months !== 'object') return {};
+  const out = {};
+  for (const [ym, v] of Object.entries(months)) if (YM_RE.test(ym) && ym <= until && Number(v) > 0) out[ym] = round2(Number(v));
+  return out;
+}
 
 // Aggiunge gli elementi importati non ancora presenti (stesso id), dopo averli controllati.
 function mergeById(key, list, clean) {
@@ -2754,6 +2772,17 @@ $('import').addEventListener('change', async (e) => {
       ...(typeof x.debtId === 'string' ? { debtId: x.debtId } : {}), ...(typeof x.at === 'number' ? { at: x.at } : {}) }));
   if (parsed && Array.isArray(parsed.salaryExtras)) mergeById('salaryExtras', parsed.salaryExtras, (x) => typeof x.subId === 'string' && typeof x.incomeId === 'string'
     && ({ id: String(x.id), incomeId: x.incomeId, subId: x.subId, date: x.date, amount: x.amount, ...(typeof x.at === 'number' ? { at: x.at } : {}) }));
+  // Storico dei budget delle sotto aree già presenti: sostituisce quello attuale.
+  let histCount = 0;
+  if (parsed?.budgetHistory && typeof parsed.budgetHistory === 'object') {
+    for (const [subId, h] of Object.entries(parsed.budgetHistory)) {
+      const found = findSub(subId);
+      if (!found || !h || !YM_RE.test(h.until)) continue;
+      found.sub.hist = cleanHist(h.months, h.until);
+      found.sub.histUntil = h.until;
+      histCount++;
+    }
+  }
   if (typeof parsed?.partner === 'string' && parsed.partner) data.partner = parsed.partner;
   if (parsed?.goal?.target > 0) data.goal = { target: Number(parsed.goal.target) };
   const cleanGoal = (g) => (g && g.id && typeof g.name === 'string' && g.target > 0
@@ -2768,7 +2797,7 @@ $('import').addEventListener('change', async (e) => {
   }
   save();
   showPage();
-  alert(`Importati ${data.expenses.length + data.incomes.length + data.transfers.length - before} movimenti.`);
+  alert(`Importati ${data.expenses.length + data.incomes.length + data.transfers.length - before} movimenti.${histCount ? ` Storico dei budget aggiornato per ${histCount} sotto aree.` : ''}`);
 });
 
 // ---------- Avvio ----------
@@ -2784,7 +2813,7 @@ updateDebtBadge();
 
 // ---------- Versione e aggiornamenti ----------
 // Da aumentare insieme a version.json e ai ?v= di index.html a ogni modifica.
-const APP_VERSION = 29;
+const APP_VERSION = 30;
 $('app-version').textContent = `Versione ${APP_VERSION}`;
 
 // L'app installata può restare aperta in memoria per giorni: quando torna in

@@ -22,7 +22,7 @@
   <meta name="color-scheme" content="light dark">
   <!-- Il numero di versione (?v=) va aumentato a ogni modifica di style.css o app.js:
        costringe il browser a scaricare i file nuovi invece di usare quelli in cache. -->
-  <link rel="stylesheet" href="style.css?v=28">
+  <link rel="stylesheet" href="style.css?v=29">
 </head>
 <body>
   <header class="appbar">
@@ -504,6 +504,28 @@
     </div>
   </dialog>
 
+  <!-- Avanzo dello stipendio da assegnare a una sotto area -->
+  <dialog id="extra-dialog" class="sheet" aria-labelledby="extra-title">
+    <form id="extra-form">
+      <h2 id="extra-title">Avanzo dello stipendio</h2>
+      <p id="extra-text" class="settle-text"></p>
+      <div class="field">
+        <span id="extra-area-label">Sotto area</span>
+        <button type="button" id="extra-area-btn" class="picker-btn" aria-labelledby="extra-area-label extra-area-btn" aria-haspopup="dialog"></button>
+      </div>
+      <label class="field">Importo da assegnare
+        <span class="money">
+          <input type="number" id="extra-amount" step="0.01" min="0.01" required inputmode="decimal">
+          <span class="suffix">€</span>
+        </span>
+      </label>
+      <div class="sheet-actions">
+        <button type="button" class="btn ghost" id="extra-skip">Non assegnare</button>
+        <button type="submit" class="btn primary">Assegna</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Pagamento (anche parziale) tra me e il/la partner -->
   <dialog id="pay-dialog" class="sheet" aria-labelledby="pay-title">
     <form id="pay-form">
@@ -567,6 +589,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=28"></script>
+  <script src="app.js?v=29"></script>
 </body>
 </html>

@@ -766,6 +766,9 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
 
 .settle-text { margin: 0 0 14px; color: var(--muted); }
 #pay-form { display: grid; gap: 12px; }
+#extra-form { display: grid; gap: 12px; }
+#extra-form h2, #extra-form .settle-text { margin: 0; }
+.chip.extra { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
 #pay-form h2 { margin: 0; }
 .pay-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .pay-preview { font-size: 0.88rem; color: var(--muted); padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface-2); }

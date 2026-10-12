@@ -9,6 +9,8 @@ const LEGACY_VAULT_KEY = 'spese.vault.v1'; // vecchia versione cifrata con passw
 const $ = (id) => document.getElementById(id);
 
 let data = load();
+// Calcoli del salvadanaio delle sotto aree, rifatti a ogni salvataggio.
+let ledgerCache = null;
 
 const euro = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
 
@@ -26,13 +28,15 @@ function load() {
       if (!Array.isArray(parsed.goals)) parsed.goals = [];
       if (!Array.isArray(parsed.goalsDone)) parsed.goalsDone = [];
       if (!Array.isArray(parsed.debtPayments)) parsed.debtPayments = [];
+      if (!Array.isArray(parsed.salaryExtras)) parsed.salaryExtras = [];
       return parsed;
     }
   } catch {}
-  return { expenses: [], incomes: [], transfers: [], areas: [], accounts: [], partner: 'Laura', goal: { target: 10000 }, goals: [], goalsDone: [], debtPayments: [] };
+  return { expenses: [], incomes: [], transfers: [], areas: [], accounts: [], partner: 'Laura', goal: { target: 10000 }, goals: [], goalsDone: [], debtPayments: [], salaryExtras: [] };
 }
 
 function save() {
+  ledgerCache = null;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   updateDebtBadge();
 }
@@ -481,22 +485,24 @@ $('area-dialog').addEventListener('click', (e) => {
 
 const MONTHS = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
 
-function budgetRow(label, spent, budget, extra) {
-  // Senza budget non c'è un limite da sforare: barra neutra.
-  const ratio = budget > 0 ? spent / budget : spent > 0 ? 1 : 0;
-  const state = budget <= 0 ? 'none' : ratio > 1 ? 'over' : ratio >= 0.8 ? 'warn' : '';
+// budget = disponibile; tracked = la riga ha un budget o un saldo (anche negativo) da mostrare.
+function budgetRow(label, spent, budget, extra, note = '', tracked = budget !== 0) {
+  // Senza budget né saldo non c'è un limite da sforare: barra neutra.
+  const ratio = budget > 0 ? spent / budget : spent > 0 || budget < 0 ? 1 : 0;
+  const left = round2(budget - spent);
+  const state = !tracked ? 'none' : left < 0 ? 'over' : ratio >= 0.8 ? 'warn' : '';
   const bar = el('div', { className: 'bar' });
   bar.style.width = `${Math.min(ratio, 1) * 100}%`;
-  const left = budget <= 0 ? 'nessun budget'
-    : spent <= budget ? `restano ${euro.format(budget - spent)}` : `sforato di ${euro.format(spent - budget)}`;
+  const leftText = !tracked ? 'nessun budget'
+    : left >= 0 ? `restano ${euro.format(left)}` : `sforato di ${euro.format(-left)}`;
   const detail = budget > 0 ? `Speso ${euro.format(spent)} di ${euro.format(budget)}` : `Speso ${euro.format(spent)}`;
   const labelEl = el('span', { className: 'label' }, ...(extra ? [extra] : []), label);
   labelEl.title = label;
   return el('div', { className: `budget-row ${state}`.trim() },
     labelEl,
-    el('span', { className: 'left', textContent: left }),
+    el('span', { className: 'left', textContent: leftText }),
     el('div', { className: 'track' }, bar),
-    el('span', { className: 'detail', textContent: detail }));
+    el('span', { className: 'detail', textContent: note ? `${detail} (${note})` : detail }));
 }
 
 // Importo nell'elenco: per le spese divise la mia quota, con il totale sotto.
@@ -589,15 +595,22 @@ function incomeRow(x) {
   const del = iconButton('trash', `Elimina ${title}`, 'danger');
   del.addEventListener('click', () => {
     const note = account ? `\n${euro.format(x.amount)} verranno tolti dal conto "${account.name}".` : '';
-    if (!confirm(`Eliminare l'entrata "${title}"?${note}`)) return;
+    const extras = data.salaryExtras.filter((e) => e.incomeId === x.id);
+    const extraNote = extras.length ? `\nVerrà tolto anche l'extra di ${euro.format(extras.reduce((t, e) => t + e.amount, 0))} assegnato alla sotto area.` : '';
+    if (!confirm(`Eliminare l'entrata "${title}"?${note}${extraNote}`)) return;
     data.incomes = data.incomes.filter((y) => y.id !== x.id);
+    data.salaryExtras = data.salaryExtras.filter((e) => e.incomeId !== x.id);
     if (editing?.id === x.id) stopEdit();
     save();
     render();
   });
   return editableRow('income', x, dateBadge(x.date, 'in'),
     el('div', { className: 'expense-main' }, el('div', { className: 'desc', textContent: title }),
-      el('div', { className: 'tags' }, el('span', { className: 'chip ok', textContent: 'Entrata' }), accountChip(account))),
+      el('div', { className: 'tags' }, el('span', { className: 'chip ok', textContent: 'Entrata' }), accountChip(account),
+        ...data.salaryExtras.filter((e) => e.incomeId === x.id).map((e) => {
+          const found = findSub(e.subId);
+          return el('span', { className: 'chip extra', textContent: `+${euro.format(e.amount)} a ${found ? found.sub.name : 'area eliminata'}` });
+        }))),
     el('span', { className: 'expense-amount in', textContent: `+${euro.format(x.amount)}` }), del);
 }
 
@@ -634,9 +647,10 @@ function render() {
   const total = round2(expenses.filter((x) => !outsideAreas(x)).reduce((s, x) => s + myShare(x), 0));
   $('total').textContent = euro.format(total);
 
-  const totalBudget = data.areas.reduce((s, m) => s + macroBudget(m), 0);
-  $('budget-hint').textContent = totalBudget > 0
-    ? `su ${euro.format(totalBudget)} di budget · ${total <= totalBudget ? `restano ${euro.format(totalBudget - total)}` : `sforato di ${euro.format(total - totalBudget)}`}`
+  // Disponibile del mese: budget + avanzi dei mesi prima + extra dagli stipendi.
+  const avail = sumPeriods(data.areas.flatMap((m) => m.subs.map((sub) => subPeriod(sub, month, month)))).avail;
+  $('budget-hint').textContent = data.areas.some((m) => m.subs.length)
+    ? `su ${euro.format(avail)} disponibili · ${total <= avail ? `restano ${euro.format(avail - total)}` : `sforato di ${euro.format(total - avail)}`}`
     : '';
 
   const income = round2(incomes.reduce((s, x) => s + x.amount, 0));
@@ -863,6 +877,86 @@ $('f-split').addEventListener('change', () => { flt.splitOnly = $('f-split').che
 
 const stats = { period: 'month' };
 const monthIndex = (ym) => Number(ym.slice(0, 4)) * 12 + Number(ym.slice(5, 7)) - 1;
+const ymOf = (i) => `${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}`;
+
+// ---------- Salvadanaio delle sotto aree ----------
+// Ogni sotto area accumula mese per mese: budget del mese + extra dagli stipendi − spese.
+// Quello che non spendi resta disponibile nei mesi dopo; uno sforamento si recupera nei mesi dopo.
+// Si parte dal mese della prima spesa. Una sotto area creata dopo parte dal mese di creazione
+// (since) e una modifica del budget vale dal mese in cui la fai (prev = budget dei mesi prima).
+
+function budgetAt(sub, ym) {
+  if (sub.since && ym < sub.since) return 0;
+  for (const p of sub.prev || []) if (ym < p.to) return p.amount;
+  return sub.budget;
+}
+
+// Cambia il budget mensile di una sotto area dal mese corrente in poi.
+function setSubBudget(sub, value) {
+  if (value === sub.budget) return;
+  const now = $('month').dataset.today;
+  const prev = sub.prev || [];
+  if (!(sub.since && sub.since >= now) && !prev.some((p) => p.to === now)) prev.push({ to: now, amount: sub.budget });
+  if (prev.length) sub.prev = prev.sort((a, b) => a.to.localeCompare(b.to));
+  sub.budget = value;
+}
+
+function ledger() {
+  if (ledgerCache) return ledgerCache;
+  const spent = {};
+  const extra = {};
+  let first = null;
+  const add = (map, subId, ym, v) => {
+    const m = (map[subId] ||= {});
+    m[ym] = (m[ym] || 0) + v;
+    if (!first || ym < first) first = ym;
+  };
+  for (const x of data.expenses) if (x.subId && !outsideAreas(x)) add(spent, x.subId, x.date.slice(0, 7), myShare(x));
+  for (const e of data.salaryExtras) add(extra, e.subId, e.date.slice(0, 7), e.amount);
+  return (ledgerCache = { first, spent, extra });
+}
+
+// Situazione di una sotto area nei mesi da a a b: avanzo portato dai mesi prima (carry),
+// budget, extra e spese del periodo, disponibile e rimanente.
+function subPeriod(sub, a, b) {
+  const L = ledger();
+  const origin = L.first && L.first < a ? L.first : a;
+  const sp = L.spent[sub.id] || {};
+  const ex = L.extra[sub.id] || {};
+  let carry = 0;
+  let budget = 0;
+  let extra = 0;
+  let spent = 0;
+  for (let i = monthIndex(origin); i <= monthIndex(b); i++) {
+    const ym = ymOf(i);
+    const bud = L.first && ym < L.first ? 0 : budgetAt(sub, ym);
+    if (ym < a) carry += bud + (ex[ym] || 0) - (sp[ym] || 0);
+    else {
+      budget += bud;
+      extra += ex[ym] || 0;
+      spent += sp[ym] || 0;
+    }
+  }
+  const avail = round2(carry + budget + extra);
+  return { carry: round2(carry), budget: round2(budget), extra: round2(extra), spent: round2(spent), avail, left: round2(avail - spent) };
+}
+
+function sumPeriods(list) {
+  const t = { carry: 0, budget: 0, extra: 0, spent: 0, avail: 0, left: 0 };
+  for (const r of list) for (const k in t) t[k] += r[k];
+  for (const k in t) t[k] = round2(t[k]);
+  return t;
+}
+
+// Dettaglio del disponibile: "110 € + 50 € avanzati + 40 € extra".
+function availNote(r) {
+  if (!r.carry && !r.extra) return '';
+  let text = euro.format(r.budget);
+  if (r.carry > 0) text += ` + ${euro.format(r.carry)} avanzati`;
+  if (r.carry < 0) text += ` − ${euro.format(-r.carry)} da recuperare`;
+  if (r.extra) text += ` + ${euro.format(r.extra)} extra`;
+  return text;
+}
 const MONTH_NAMES = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
 
 // Macro aree chiuse a tendina nelle statistiche (preferenza di questo browser).
@@ -894,61 +988,66 @@ function renderStats() {
   yearSel.closest('.stepper').hidden = stats.period !== 'year';
   updateSteppers();
 
-  // Spese del periodo e quante volte va contato il budget mensile.
+  // Periodo scelto (mesi da a a b) e spese del periodo.
   let inPeriod;
-  let months;
+  let a;
+  let b;
   let label;
   let note;
   if (stats.period === 'month') {
     const ym = $('stats-month').value || nowYm;
     inPeriod = (x) => x.date.startsWith(ym);
-    months = 1;
+    a = ym;
+    b = ym;
     label = `Rimanente a ${MONTH_NAMES[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`;
-    note = 'Budget mensile delle aree confrontato con le spese del mese scelto.';
+    note = 'Disponibile = budget del mese + quanto è avanzato (o sforato) nei mesi prima + extra dagli stipendi.';
   } else if (stats.period === 'year') {
     const y = yearSel.value;
     inPeriod = (x) => x.date.startsWith(`${y}-`);
-    months = 12;
+    a = `${y}-01`;
+    b = `${y}-12`;
     label = `Rimanente nel ${y}`;
-    note = 'Budget annuale = budget mensile × 12 mesi.';
+    note = `Disponibile = avanzi fino a dicembre ${Number(y) - 1} + budget dei 12 mesi + extra dagli stipendi.`;
   } else {
     inPeriod = () => true;
-    months = monthIndex(lastYm) - monthIndex(firstYm) + 1;
+    a = firstYm;
+    b = lastYm;
     label = 'Rimanente totale';
+    const months = monthIndex(lastYm) - monthIndex(firstYm) + 1;
     const from = `${MONTH_NAMES[Number(firstYm.slice(5, 7)) - 1]} ${firstYm.slice(0, 4)}`;
-    note = `Budget totale = budget mensile × ${months} ${months === 1 ? 'mese' : 'mesi'} (da ${from}, mese della prima spesa, a oggi).`;
+    note = `Disponibile = budget di ${months} ${months === 1 ? 'mese' : 'mesi'} (da ${from}, mese della prima spesa, a oggi) + extra dagli stipendi.`;
   }
 
-  const spentBySub = {};
   let unassigned = 0;
-  let spentTotal = 0;
   for (const x of data.expenses) {
-    if (!inPeriod(x) || outsideAreas(x)) continue;
-    const mine = myShare(x);
-    spentTotal += mine;
-    if (x.subId && findSub(x.subId)) spentBySub[x.subId] = (spentBySub[x.subId] || 0) + mine;
-    else unassigned += mine;
+    if (inPeriod(x) && !outsideAreas(x) && !(x.subId && findSub(x.subId))) unassigned += myShare(x);
   }
-  const budgetTotal = data.areas.reduce((s, m) => s + macroBudget(m), 0) * months;
-  const remaining = budgetTotal - spentTotal;
+  const bySub = {};
+  for (const m of data.areas) for (const sub of m.subs) bySub[sub.id] = subPeriod(sub, a, b);
+  const all = sumPeriods(Object.values(bySub));
+  const spentTotal = round2(all.spent + unassigned);
+  const remaining = round2(all.avail - spentTotal);
 
   $('stats-label').textContent = label;
   $('stats-remaining').textContent = euro.format(remaining);
-  $('stats-sub').textContent = `Speso ${euro.format(spentTotal)} su ${euro.format(budgetTotal)} di budget`;
+  $('stats-sub').textContent = `Speso ${euro.format(spentTotal)} su ${euro.format(all.avail)} disponibili`;
   $('stats-note').textContent = note;
 
   const blocks = data.areas
     .filter((m) => m.subs.length)
     .map((m) => {
-      const spent = m.subs.reduce((s, sub) => s + (spentBySub[sub.id] || 0), 0);
+      const tot = sumPeriods(m.subs.map((sub) => bySub[sub.id]));
       const dot = el('span', { className: 'dot' });
       dot.style.background = AVATAR_COLORS[data.areas.indexOf(m) % AVATAR_COLORS.length];
       const subs = el('ul', { className: 'budget-subs', hidden: statsCollapsed.has(m.id) },
-        ...m.subs.map((sub) => el('li', {}, budgetRow(sub.name, spentBySub[sub.id] || 0, sub.budget * months))));
+        ...m.subs.map((sub) => {
+          const r = bySub[sub.id];
+          return el('li', {}, budgetRow(sub.name, r.spent, r.avail, null, availNote(r), r.budget !== 0 || r.avail !== 0 || r.extra !== 0));
+        }));
       // Tutta la riga della macro area apre/chiude l'elenco delle sotto aree.
       const head = el('div', { className: 'budget-head', tabIndex: 0 },
         el('span', { className: 'chevron', ariaHidden: 'true' }),
-        budgetRow(m.name, spent, macroBudget(m) * months, dot));
+        budgetRow(m.name, tot.spent, tot.avail, dot, availNote(tot), tot.budget !== 0 || tot.avail !== 0));
       head.setAttribute('role', 'button');
       head.setAttribute('aria-expanded', String(!subs.hidden));
       head.setAttribute('aria-label', `${m.name}: mostra o nascondi le sotto aree`);
@@ -969,7 +1068,7 @@ function renderStats() {
       });
       return el('li', { className: 'budget-macro' }, head, subs);
     });
-  if (unassigned > 0) blocks.push(el('li', { className: 'budget-macro' }, budgetRow('Senza area', unassigned, 0)));
+  if (unassigned > 0) blocks.push(el('li', { className: 'budget-macro' }, budgetRow('Senza area', round2(unassigned), 0)));
   $('budget-list').replaceChildren(...blocks);
   $('stats-empty').hidden = blocks.length > 0;
 }
@@ -1108,9 +1207,13 @@ $('expense-form').addEventListener('submit', (e) => {
   if (formType === 'income') {
     const accountId = $('expense-account').value;
     if (!findAccount(accountId) || !(amount > 0)) return;
+    // Modificando un'entrata, l'extra nato da quello stipendio viene ricalcolato.
+    if (editing) data.salaryExtras = data.salaryExtras.filter((e) => e.incomeId !== editing.id);
+    const id = editing && editing.kind === 'income' ? editing.id : null;
     storeMovement('income', { date, description, accountId, amount });
     saveLast({ ...readLast(), incomeAccountId: accountId });
     afterSave('Entrata');
+    if (isSalary(description)) offerSalaryExtra(id || data.incomes.at(-1).id);
     return;
   }
   if (formType === 'transfer') {
@@ -1421,7 +1524,7 @@ function renderAreas() {
       const budget = moneyInput({ value: sub.budget.toFixed(2) });
       budget.input.setAttribute('aria-label', `Budget mensile ${sub.name}`);
       budget.input.addEventListener('change', () => {
-        sub.budget = parseBudget(budget.input.value);
+        setSubBudget(sub, parseBudget(budget.input.value));
         save();
         renderAreas();
       });
@@ -1451,7 +1554,7 @@ function renderAreas() {
       e.preventDefault();
       const v = newName.value.trim();
       if (!v) return;
-      m.subs.push({ id: crypto.randomUUID(), name: v, budget: parseBudget(newBudget.input.value || 0) });
+      m.subs.push({ id: crypto.randomUUID(), name: v, budget: parseBudget(newBudget.input.value || 0), since: $('month').dataset.today });
       save();
       renderAreas();
       // Rimette il cursore nel campo della stessa macro area per inserimenti in serie.
@@ -1502,7 +1605,10 @@ function mergeAreas(list) {
     const ids = new Set(target.subs.map((x) => x.id));
     for (const sub of m.subs) {
       if (sub && sub.id && !ids.has(sub.id) && typeof sub.name === 'string') {
-        target.subs.push({ id: String(sub.id), name: sub.name, budget: parseBudget(sub.budget ?? 0) });
+        const ym = (v) => typeof v === 'string' && /^\d{4}-\d{2}$/.test(v);
+        const prev = Array.isArray(sub.prev) ? sub.prev.filter((p) => p && ym(p.to)).map((p) => ({ to: p.to, amount: parseBudget(p.amount ?? 0) })) : [];
+        target.subs.push({ id: String(sub.id), name: sub.name, budget: parseBudget(sub.budget ?? 0),
+          ...(ym(sub.since) ? { since: sub.since } : {}), ...(prev.length ? { prev } : {}) });
         ids.add(sub.id);
       }
     }
@@ -2000,6 +2106,86 @@ $('pay-form').addEventListener('submit', (e) => {
   showToast(`Pagamento di ${euro.format(draft.amount)} registrato.`);
 });
 
+// ---------- Avanzo dello stipendio ----------
+// Avanzo del mese = stipendi del mese − budget mensile totale − extra già assegnati quel mese.
+// Si può assegnare (al massimo la parte del cassetto oltre l'obiettivo) a una sotto area,
+// dove resta disponibile anche nei mesi successivi.
+
+const isSalary = (description) => /stipendio|tredicesima|quattordicesima/i.test(description || '');
+
+function salarySurplus(ym) {
+  const salaries = round2(data.incomes.filter((x) => x.date.startsWith(ym) && isSalary(x.description)).reduce((t, x) => t + x.amount, 0));
+  const budget = round2(data.areas.reduce((t, m) => t + m.subs.reduce((u, sub) => u + budgetAt(sub, ym), 0), 0));
+  const assigned = round2(data.salaryExtras.filter((e) => e.date.startsWith(ym)).reduce((t, e) => t + e.amount, 0));
+  return { salaries, budget, assigned, surplus: round2(salaries - budget - assigned) };
+}
+
+let extraState = null;
+
+function offerSalaryExtra(incomeId) {
+  const income = data.incomes.find((x) => x.id === incomeId);
+  if (!income) return;
+  const ym = income.date.slice(0, 7);
+  const s = salarySurplus(ym);
+  const monthName = `${MONTH_NAMES[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`;
+  if (s.surplus <= 0.005) {
+    showToast(`Nessun avanzo a ${monthName}: stipendi ${euro.format(s.salaries)}, budget ${euro.format(s.budget)}${s.assigned ? `, già assegnati ${euro.format(s.assigned)}` : ''}.`);
+    return;
+  }
+  const b = stashBreakdown();
+  const cap = round2(b.stash - data.goal.target);
+  if (cap <= 0.005) {
+    showToast(`Avanzo di ${euro.format(s.surplus)}: resta nel cassetto finché non raggiungi l'obiettivo.`);
+    return;
+  }
+  const max = round2(Math.min(s.surplus, cap));
+  const last = readLast().extraSubId;
+  extraState = { incomeId, date: income.date, max, subId: findSub(last) ? last : '' };
+  $('extra-title').textContent = `Avanzano ${euro.format(s.surplus)}`;
+  $('extra-text').replaceChildren(
+    `Stipendi di ${monthName} ${euro.format(s.salaries)} − budget mensile ${euro.format(s.budget)}`,
+    ...(s.assigned ? [` − già assegnati ${euro.format(s.assigned)}`] : []), '.',
+    ...(max < s.surplus ? [el('br'), `Puoi assegnarne al massimo ${euro.format(max)}, la parte del cassetto oltre l'obiettivo.`] : []),
+    el('br'), 'A quale sotto area li assegni? Resteranno disponibili anche nei mesi successivi.');
+  $('extra-amount').value = max.toFixed(2);
+  $('extra-amount').max = max.toFixed(2);
+  updateExtraArea();
+  $('extra-dialog').showModal();
+}
+
+function updateExtraArea() {
+  const found = findSub(extraState?.subId);
+  $('extra-area-btn').replaceChildren(...(found
+    ? [el('span', { className: 'macro', textContent: found.macro.name }), el('span', { className: 'sub', textContent: found.sub.name })]
+    : [el('span', { className: 'placeholder', textContent: 'Scegli una sotto area…' })]));
+}
+
+$('extra-area-btn').addEventListener('click', () => {
+  openAreaPicker({ current: extraState?.subId || '', onPick: (subId) => {
+    if (extraState) extraState.subId = subId;
+    updateExtraArea();
+  } });
+});
+$('extra-skip').addEventListener('click', () => $('extra-dialog').close());
+$('extra-dialog').addEventListener('close', () => { extraState = null; });
+$('extra-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  if (!extraState) return;
+  if (!findSub(extraState.subId)) {
+    $('extra-area-btn').click();
+    return;
+  }
+  const amount = round2(Math.min(Number($('extra-amount').value), extraState.max));
+  if (!(amount > 0)) return;
+  const sub = findSub(extraState.subId).sub;
+  data.salaryExtras.push({ id: crypto.randomUUID(), incomeId: extraState.incomeId, subId: sub.id, date: extraState.date, amount, at: Date.now() });
+  saveLast({ ...readLast(), extraSubId: sub.id });
+  $('extra-dialog').close();
+  save();
+  render();
+  showToast(`${euro.format(amount)} assegnati a ${sub.name}.`);
+});
+
 // ---------- Obiettivi: il cassetto ----------
 // Cassetto = saldo totale − conti esclusi − budget ancora da spendere nel mese
 // in corso (per sotto area, solo residui positivi) − debiti aperti verso il/la partner.
@@ -2010,12 +2196,9 @@ function stashBreakdown() {
   const excludedAccounts = data.accounts.filter((a) => a.excluded);
   const excluded = round2(excludedAccounts.reduce((s, a) => s + currentBalance(a), 0));
 
-  const spentBySub = {};
-  for (const x of data.expenses) {
-    if (x.date.startsWith(nowYm) && x.subId && !outsideAreas(x)) spentBySub[x.subId] = (spentBySub[x.subId] || 0) + myShare(x);
-  }
+  // Soldi già destinati: quanto resta nel salvadanaio di ogni sotto area (i saldi negativi contano zero).
   let reserved = 0;
-  for (const m of data.areas) for (const sub of m.subs) reserved += Math.max(0, sub.budget - (spentBySub[sub.id] || 0));
+  for (const m of data.areas) for (const sub of m.subs) reserved += Math.max(0, subPeriod(sub, nowYm, nowYm).left);
   reserved = round2(reserved);
 
   const t = debtTotals();
@@ -2060,7 +2243,7 @@ function renderGoals() {
   const rows = [
     row('Saldo totale dei conti', euro.format(b.total), data.accounts.length ? '' : 'Nessun conto: aggiungili nella pagina Conti.'),
     row('Conti esclusi', `− ${euro.format(b.excluded)}`, b.excludedAccounts.length ? b.excludedAccounts.map((a) => `${a.emoji} ${a.name}`).join(', ') : 'Nessun conto escluso', 'minus'),
-    row(`Budget ancora da spendere a ${monthName}`, `− ${euro.format(b.reserved)}`, 'Quanto resta in ogni sotto area questo mese (le aree sforate contano zero)', 'minus'),
+    row(`Budget ancora da spendere a ${monthName}`, `− ${euro.format(b.reserved)}`, 'Quanto resta in ogni sotto area, compresi gli avanzi dei mesi prima e gli extra (le aree sforate contano zero)', 'minus'),
     row(`Debiti verso ${partnerName()}`, `− ${euro.format(b.owe)}`, b.owed ? `Non contati: i ${euro.format(b.owed)} che ${partnerName()} ti deve, finché non li restituisce` : '', 'minus'),
     row('Cassetto', euro.format(b.stash), '', 'result'),
   ];
@@ -2569,6 +2752,8 @@ $('import').addEventListener('change', async (e) => {
   if (parsed && Array.isArray(parsed.debtPayments)) mergeById('debtPayments', parsed.debtPayments, (x) => (x.dir === 'in' || x.dir === 'out')
     && ({ id: String(x.id), dir: x.dir, date: x.date, amount: x.amount, ...(typeof x.accountId === 'string' ? { accountId: x.accountId } : {}),
       ...(typeof x.debtId === 'string' ? { debtId: x.debtId } : {}), ...(typeof x.at === 'number' ? { at: x.at } : {}) }));
+  if (parsed && Array.isArray(parsed.salaryExtras)) mergeById('salaryExtras', parsed.salaryExtras, (x) => typeof x.subId === 'string' && typeof x.incomeId === 'string'
+    && ({ id: String(x.id), incomeId: x.incomeId, subId: x.subId, date: x.date, amount: x.amount, ...(typeof x.at === 'number' ? { at: x.at } : {}) }));
   if (typeof parsed?.partner === 'string' && parsed.partner) data.partner = parsed.partner;
   if (parsed?.goal?.target > 0) data.goal = { target: Number(parsed.goal.target) };
   const cleanGoal = (g) => (g && g.id && typeof g.name === 'string' && g.target > 0
@@ -2599,7 +2784,7 @@ updateDebtBadge();
 
 // ---------- Versione e aggiornamenti ----------
 // Da aumentare insieme a version.json e ai ?v= di index.html a ogni modifica.
-const APP_VERSION = 28;
+const APP_VERSION = 29;
 $('app-version').textContent = `Versione ${APP_VERSION}`;
 
 // L'app installata può restare aperta in memoria per giorni: quando torna in
